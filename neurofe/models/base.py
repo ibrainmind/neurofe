@@ -30,10 +30,19 @@ class SimulationResult:
         Model states from prediction/evaluation.
     weights : list
         Structural connectivity weight history.
+    loss_main : ndarray
+        Per-batch data-fit term (RMSE), unweighted.  Bounded below by 0,
+        so unlike `loss` this is readable as fit quality.
+    loss_prior : ndarray
+        Per-batch prior term.  Unbounded below -- the -log(prior_var_inv)
+        summand is negative whenever prior_std < 1 and can be driven
+        arbitrarily negative by sharpening priors, independently of the fit.
     """
 
     def __init__(self) -> None:
         self.loss: npt.NDArray[np.floating] = np.array([])
+        self.loss_main: npt.NDArray[np.floating] = np.array([])
+        self.loss_prior: npt.NDArray[np.floating] = np.array([])
         self.eeg_train = None
         self.eeg_test = None
         self.states_train = None
@@ -199,7 +208,10 @@ class BaseModel(torch.nn.Module):
         m: torch.nn.ReLU = torch.nn.ReLU()
         for name in self._par_names:
             p: Par = getattr(self.param, name)
-            if p.fit_hyper:
+            # std_in is fitted but deliberately unregularized, as in the
+            # reference implementation: the noise level is identifiable
+            # straight from the pre-stimulus baseline and needs no prior.
+            if p.fit_hyper and name != 'std_in':
                 loss_prior.append(
                     torch.sum(
                         (lb + m(p.prior_var_inv))
@@ -356,6 +368,8 @@ class BaseModel(torch.nn.Module):
         mask_sc = np.tril_indices(self.node_size, -1)
 
         loss_his: list = []
+        main_his: list = []
+        prior_his: list = []
         fit_sc: list = []
 
         # Number of TBPTT windows per epoch. Here `batch_size` is the
@@ -369,6 +383,8 @@ class BaseModel(torch.nn.Module):
             eeg_epoch: npt.NDArray = eeg[i_epoch % eeg.shape[0]]
             epoch_eeg: list = []
             epoch_states: list = []
+            epoch_main: list = []
+            epoch_prior: list = []
 
             for i_batch in range(num_batches):
                 optimizer.zero_grad()
@@ -415,6 +431,10 @@ class BaseModel(torch.nn.Module):
                 loss_val: torch.Tensor = w_cost * loss_main + loss_prior
 
                 loss_his.append(loss_val.detach().numpy())
+                main_his.append(loss_main.detach().numpy())
+                prior_his.append(loss_prior.detach().numpy())
+                epoch_main.append(float(loss_main.detach()))
+                epoch_prior.append(float(loss_prior.detach()))
                 epoch_eeg.append(
                     next_state[self.output_name].detach().numpy())
                 if 'states' in next_state:
@@ -443,10 +463,20 @@ class BaseModel(torch.nn.Module):
                 fc_sim[mask_e], fc[mask_e])[0, 1]
             cos_sim: float = np.diag(
                 cosine_similarity(result.eeg_train, eeg.mean(0))).mean()
-            print(f'epoch: {i_epoch}, loss: {loss_val.detach().numpy()}, '
+            # The data term and the prior term are reported separately: the
+            # total mixes a bounded RMSE with a prior term that is unbounded
+            # below, so a falling total is consistent with the priors
+            # collapsing while the fit stands still.  Both are means over the
+            # epoch's batches, not the last batch alone.
+            mean_main: float = float(np.mean(epoch_main))
+            mean_prior: float = float(np.mean(epoch_prior))
+            print(f'epoch: {i_epoch}, loss: {mean_main * w_cost + mean_prior:.4f} '
+                  f'(rmse {mean_main:.4f} x{w_cost} + prior {mean_prior:.4f}), '
                   f'FC corr: {fc_corr:.4f}, cos_sim: {cos_sim:.4f}')
 
         result.loss = np.array(loss_his)
+        result.loss_main = np.array(main_his)
+        result.loss_prior = np.array(prior_his)
         result.weights = np.array(fit_sc) if fit_sc else np.array([])
         self._last_result: SimulationResult = result
         return result

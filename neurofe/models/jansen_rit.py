@@ -38,13 +38,11 @@ class JRParams:
             Inverse time constant of the inhibitory PSP (1/s). Larger
             ``b`` means faster rise/decay of the IPSP.
 
-    Long-range coupling gains (scale the network-level inputs)
+    Long-range coupling gain
         g : float, default 1000
-            Global coupling gain for the lateral (P→P) pathway.
-        g_f : float, default 40
-            Coupling gain for the feedforward (P→E) pathway.
-        g_b : float, default 40
-            Coupling gain for the feedback (P→I) pathway.
+            Global coupling gain.  Scales the single long-range pathway,
+            which carries delayed E from every parcel into the excitatory
+            population.
 
     Intracolumnar connectivity constants (Jansen & Rit, 1995)
         c1 : float, default 135
@@ -111,10 +109,8 @@ class JRParams:
             # Inhibitory PSP kernel: B = peak amplitude, b = inverse time constant
             "B": Par(22),
             "b": Par(50),
-            # Long-range coupling gains
-            "g": Par(1000),    # lateral (P -> P)
-            "g_f": Par(40),    # feedforward (P -> E)
-            "g_b": Par(40),    # feedback (P -> I)
+            # Long-range coupling gain (single pathway, delayed E -> E)
+            "g": Par(1000),
             # Intracolumnar connectivity constants
             "c1": Par(135),         # P -> E presynaptic
             "c2": Par(135 * 0.8),   # P -> E postsynaptic
@@ -155,10 +151,9 @@ class JansenRit(BaseModel):
         - E (excitatory interneurons)
         - I (inhibitory interneurons)
 
-    Three connectivity pathways:
-        - w_ll: lateral (pyramidal-to-pyramidal), symmetrized
-        - w_ff: feedforward (pyramidal-to-excitatory)
-        - w_bb: feedback (pyramidal-to-inhibitory)
+    One long-range pathway: w_bb, a per-edge gain on the empirical SC
+    carrying delayed E between parcels.  The external stimulus enters the
+    same population, so it propagates through this pathway directly.
 
     Parameters
     ----------
@@ -247,35 +242,33 @@ class JansenRit(BaseModel):
 
         self._init_sc_parameters()
 
+        # Source-to-sensor gain.  The reference implementation hard-codes 1e-4
+        # for a leadfield whose rows have norm ~5e2; deriving it from the
+        # actual row norms keeps the readout on the same scale for leadfields
+        # built by other pipelines, instead of silently mis-scaling them.
+        self.s2o_coef: float = float(
+            1.0 / np.median(np.linalg.norm(np.asarray(leadfield), axis=1)))
+
     def _default_params(self) -> JRParams:
         """Return default JR parameters."""
         return JRParams()
 
     def _init_sc_parameters(self) -> None:
-        """Initialize feedforward, feedback, and lateral connectivity gains.
+        """Initialize the long-range connectivity gains.
 
-        Each connectivity matrix uses a (node_size, 2) parameterization:
-        w = diag(exp(w[:,0])) @ SC @ diag(exp(w[:,1]))
+        One gain per edge, exponentiated so it stays positive:
+        ``w = exp(w_bb) * SC``.  A per-node (node_size, 2) parameterization
+        was tried and is cheaper, but it can only rescale rows and columns --
+        it cannot reweight individual edges, which is what the reference
+        model fits.
         """
         small_constant: float = 0.05
-        zsmat: npt.NDArray = (
-            np.zeros((self.node_size, 2)) + small_constant)
-
         if self.fit_connectivity:
-            self.w_bb = Parameter(
-                torch.tensor(zsmat.copy(), dtype=torch.float32))
-            self.w_ff = Parameter(
-                torch.tensor(zsmat.copy(), dtype=torch.float32))
-            self.w_ll = Parameter(
-                torch.tensor(zsmat.copy(), dtype=torch.float32))
+            self.w_bb = Parameter(torch.tensor(
+                np.zeros((self.node_size, self.node_size)) + small_constant,
+                dtype=torch.float32))
         else:
             self.w_bb = torch.tensor(
-                np.zeros((self.node_size, self.node_size)),
-                dtype=torch.float32)
-            self.w_ff = torch.tensor(
-                np.zeros((self.node_size, self.node_size)),
-                dtype=torch.float32)
-            self.w_ll = torch.tensor(
                 np.zeros((self.node_size, self.node_size)),
                 dtype=torch.float32)
 
@@ -321,30 +314,36 @@ class JansenRit(BaseModel):
         """
         m = torch.nn.ReLU()
         con_1 = torch.tensor(1.0, dtype=torch.float32)
-        u_2ndsys_ub: int = 500
-        lb: float = 0.0
+        # Bounds and coefficients are those of the reference implementation
+        # (PyTepFit RNNJANSEN.forward).  They are not cosmetic: conduct_lb
+        # keeps the delays inside the 500-step buffer, noise_std_lb sets the
+        # ongoing drive, and s2o_coef brings the raw leadfield into microvolts.
+        u_2ndsys_ub: int = 500      # bound on the input to the 2nd-order system
+        conduct_lb: float = 1.5     # lower bound on conduction velocity
+        noise_std_lb: float = 150.  # lower bound on input-noise std
+        lb: float = 0.01            # lower bound on local gains
+        s2o_coef: float = 1e-4      # source-to-sensor coefficient
+        k_lb: float = 0.5           # lower bound on the stimulation gain
 
         # Extract model parameters
         A = m(self.param.A.value())
-        a = m(self.param.a.value())
+        a = con_1 + m(self.param.a.value())
         B = m(self.param.B.value())
-        b = m(self.param.b.value())
+        b = con_1 + m(self.param.b.value())
         g = lb * con_1 + m(self.param.g.value())
         c1 = lb * con_1 + m(self.param.c1.value())
         c2 = lb * con_1 + m(self.param.c2.value())
         c3 = lb * con_1 + m(self.param.c3.value())
         c4 = lb * con_1 + m(self.param.c4.value())
-        std_in = m(self.param.std_in.value())
+        std_in = noise_std_lb * con_1 + m(self.param.std_in.value())
         vmax = self.param.vmax.value()
         v0 = self.param.v0.value()
         r = self.param.r.value()
         y0 = self.param.y0.value()
-        mu = 0.1 * con_1 + m(self.param.mu.value())
-        k = 5.0 * con_1 + m(self.param.k.value())
+        mu = conduct_lb * con_1 + m(self.param.mu.value())
+        k = k_lb * con_1 + m(self.param.k.value())
         cy0 = self.param.cy0.value()
         ki = self.param.ki.value()
-        g_f = lb * con_1 + m(self.param.g_f.value())
-        g_b = lb * con_1 + m(self.param.g_b.value())
         lm = self.param.lm.value()
 
         dt = self.step_size
@@ -364,33 +363,20 @@ class JansenRit(BaseModel):
 
         # Compute three connectivity matrices
         if self.sc.shape[0] > 1:
-            # Feedback: pyramidal to inhibitory
-            w_b = (torch.diag(torch.exp(self.w_bb[:, 0]))
-                   @ sc
-                   @ torch.diag(torch.exp(self.w_bb[:, 1])))
-            w_n_b = w_b / torch.linalg.norm(w_b) * mask_t
-            self.sc_m_b = w_n_b
-            dg_b = -torch.diag(torch.sum(w_n_b, dim=1))
-
-            # Feedforward: pyramidal to excitatory
-            w_f = (torch.diag(torch.exp(self.w_ff[:, 0]))
-                   @ sc
-                   @ torch.diag(torch.exp(self.w_ff[:, 1])))
-            w_n_f = w_f / torch.linalg.norm(w_f) * mask_t
-            self.sc_m_f = w_n_f
-            dg_f = -torch.diag(torch.sum(w_n_f, dim=1))
-
-            # Lateral: pyramidal to pyramidal (symmetrized)
-            w_l = (torch.diag(torch.exp(self.w_ll[:, 0]))
-                   @ sc
-                   @ torch.diag(torch.exp(self.w_ll[:, 1])))
-            w_sym = 0.5 * (w_l + w_l.T)
-            w_n_l = w_sym / torch.linalg.norm(w_sym) * mask_t
-            self.sc_fitted = w_n_l
-            dg_l = -torch.diag(torch.sum(w_n_l, dim=1))
+            # One long-range pathway, as in the reference: delayed E from every
+            # parcel, weighted by a per-edge gain on the empirical SC.  The
+            # log1p is applied to the symmetrised product before normalising --
+            # it compresses the heavy tail of the streamline counts so a few
+            # dense edges cannot dominate the unit-norm budget.
+            w = torch.exp(self.w_bb) * sc
+            w_sym = 0.5 * (w + w.T)
+            w_n = (torch.log1p(w_sym)
+                   / torch.linalg.norm(torch.log1p(w_sym))) * mask_t
+            self.sc_fitted = w_n
+            dg = -torch.diag(torch.sum(w_n, dim=1))
         else:
-            dg_l = dg_b = dg_f = 0
-            w_n_l = w_n_b = w_n_f = 0
+            dg = 0
+            w_n = 0
 
         # Compute conduction delays
         self.delays = (self.dist / mu).type(torch.int64)
@@ -406,40 +392,46 @@ class JansenRit(BaseModel):
             Ed = torch.transpose(
                 hE.clone().gather(1, self.delays), 0, 1)
 
-            LEd_p2i = (torch.reshape(torch.sum(w_n_b * Ed, 1),
-                                     (n_nodes, 1))
-                       + torch.matmul(dg_b, I - E))
-            LEd_p2e = (torch.reshape(torch.sum(w_n_f * Ed, 1),
-                                     (n_nodes, 1))
-                       + torch.matmul(dg_f, E - I))
-            LEd_p2p = (torch.reshape(torch.sum(w_n_l * Ed, 1),
-                                     (n_nodes, 1))
-                       + torch.matmul(dg_l, P))
+            LEd = torch.reshape(torch.sum(w_n * Ed, 1), (n_nodes, 1))
 
             for step_i in range(self.hidden_size):
                 # External input (pyramidal population)
                 u_stim = external[:, step_i:step_i + 1, i_window, 0]
 
-                # Stochastic noise
-                P_noise = std_in * torch.randn(n_nodes, 1)
+                # Stochastic noise.  Only the excitatory population is
+                # driven: the reference multiplies the P and I noise terms by
+                # a literal 0, so injecting into all three would deliver
+                # several times the intended ongoing activity.
                 E_noise = std_in * torch.randn(n_nodes, 1)
-                I_noise = std_in * torch.randn(n_nodes, 1)
 
                 # Firing rates (sigmoid)
                 P_sigm = vmax / (1 + torch.exp(r * (v0 - (E - I))))
                 E_sigm = vmax / (1 + torch.exp(r * (v0 - (c1 * P))))
                 I_sigm = vmax / (1 + torch.exp(r * (v0 - (c3 * P))))
 
-                # Input to each population:
-                #   Local + Long-range + Noise + External
-                rP = P_sigm + g * LEd_p2p + P_noise + k * ki * u_stim
-                rE = c2 * E_sigm + g_f * LEd_p2e + E_noise
-                rI = c4 * I_sigm + g_b * LEd_p2i + I_noise
+                # Input to each population.  The long-range term is a
+                # Laplacian on delayed E and reaches the excitatory population
+                # only; P and I receive purely local input.
+                rP = P_sigm
+                rE = (E_noise
+                      + g * (LEd + torch.matmul(dg, E))
+                      + c2 * E_sigm)
+                rI = c4 * I_sigm
 
                 # Bound inputs for stability
                 rP_bd = u_2ndsys_ub * torch.tanh(rP / u_2ndsys_ub)
                 rE_bd = u_2ndsys_ub * torch.tanh(rE / u_2ndsys_ub)
                 rI_bd = u_2ndsys_ub * torch.tanh(rI / u_2ndsys_ub)
+
+                # External stimulation drives the excitatory interneurons --
+                # the extrinsic input port of the canonical Jansen-Rit column
+                # -- and is added AFTER the tanh, so a strong pulse is not
+                # squashed by a bound meant for the recurrent terms.  Folding
+                # it into rP before the tanh (as an earlier version did) caps
+                # the delivered drive at u_2ndsys_ub=500 no matter the
+                # amplitude, ~16x less than the reference delivers, and leaves
+                # no visible early response.
+                rE_bd = rE_bd + k * ki * u_stim
 
                 # Euler integration
                 P_tp1 = P + dt * Pv
@@ -452,23 +444,25 @@ class JansenRit(BaseModel):
                 Iv_tp1 = Iv + dt * (B * b * rI_bd
                                      - 2 * b * Iv - b ** 2 * I)
 
-                # Saturation for stability
-                P = 1000 * torch.tanh(P_tp1 / 1000)
-                E = 1000 * torch.tanh(E_tp1 / 1000)
-                I = 1000 * torch.tanh(I_tp1 / 1000)
-                Pv = 1000 * torch.tanh(Pv_tp1 / 1000)
-                Ev = 1000 * torch.tanh(Ev_tp1 / 1000)
-                Iv = 1000 * torch.tanh(Iv_tp1 / 1000)
+                # No state saturation: the reference leaves the states
+                # unbounded (its 1000*tanh lines are commented out) and the
+                # inputs are already bounded above by u_2ndsys_ub.
+                P, E, I = P_tp1, E_tp1, I_tp1
+                Pv, Ev, Iv = Pv_tp1, Ev_tp1, Iv_tp1
 
-            # Update delay buffer
-            hE = torch.cat([P, hE[:, :-1]], dim=1)
+            # Update delay buffer with E -- the variable the stimulus enters,
+            # so the drive propagates directly.  Buffering P instead routes it
+            # through P_sigm = sigmoid(E - I), which is bounded by vmax and
+            # squashes the evoked response before it can leave the parcel.
+            hE = torch.cat([E, hE[:, :-1]], dim=1)
 
-            # EEG output: normalize leadfield and project source to channels
-            lm_t = (lm.T / torch.sqrt((lm ** 2).sum(1))).T
-            lm_t_dm = (lm_t
+            # EEG output: average-reference the leadfield (do NOT row-normalize
+            # it -- that gives every channel the same total sensitivity and
+            # erases the amplitude topography) and scale by s2o_coef.
+            lm_t_dm = (lm
                         - (1 / n_chans)
-                        * torch.matmul(torch.ones((1, n_chans)), lm_t))
-            temp = cy0 * torch.matmul(lm_t_dm, E - I) - y0
+                        * torch.matmul(torch.ones((1, n_chans)), lm))
+            temp = s2o_coef * cy0 * torch.matmul(lm_t_dm, E - I) - y0
             eeg_window.append(temp)
 
             states_window.append(
