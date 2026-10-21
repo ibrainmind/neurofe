@@ -20,6 +20,13 @@ class Par:
     prior_std : float or ndarray, optional
         Prior standard deviation (controls regularization strength).
         Required if fit_hyper=True.
+
+        NOTE: PyTepFit's ``ParamsJR`` takes ``[value, v]`` where ``v`` is the
+        prior PRECISION, not the standard deviation -- its loss uses ``v``
+        directly as ``(lb + relu(v)) * (theta - mean)**2``.  Copying those
+        numbers into this slot inverts every prior: the reference's ``g``
+        precision of 0.1 becomes 10, pinning the global coupling 100x too
+        hard.  Pass ``1 / v`` when porting values from that model.
     fit_hyper : bool
         Whether this parameter should be fitted. Default False.
 
