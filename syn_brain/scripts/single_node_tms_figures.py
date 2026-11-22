@@ -226,7 +226,7 @@ def main():
     prog = 1 - np.abs(err) / np.maximum(np.abs(err0), 1e-9)
     summary["start_median_abs_err_pct"] = dict(zip(FIT, (100 * np.median(np.abs(err0[sel(d, exp="E1")][:, :len(FIT)]), 0)).round(1).tolist()))
     summary["progress_median"] = {}
-    for exp in ("E1", "E2", "E3", "E4", "E6", "E7", "E8"):
+    for exp in ("E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10"):
         mm = sel(d, exp=exp)
         if mm.any():
             npar = len(ALL) if exp == "E3" else len(FIT)
@@ -439,6 +439,47 @@ def main():
     ax.set_title("E7  resting (p=0) vs driven (p=110) operating point")
     fig.tight_layout()
     save(fig, "e6_e7")
+
+    # 14b. E9 + E10: firing-state recovery (tonic p=120, 150 -- past the jump, vs E7's p=110)
+    if sel(d, exp="E9").any():
+        from syn_brain.scripts.single_node_tms import FIRING_PROTOCOLS
+        ps_firing = sorted({int(p.split("@p")[1]) for p in FIRING_PROTOCOLS})
+        fig, axes = plt.subplots(1, 2, figsize=(11, 3.6))
+        ax = axes[0]
+        combos = [("E1", "SP1000"), ("E7", "SP1000@p110")] + [("E9", f"SP1000@p{p}") for p in ps_firing]
+        summary["E9"] = {}
+        for k, (exp, prot) in enumerate(combos):
+            mm = sel(d, exp=exp, protocol=prot)
+            e = np.abs(err[mm, :len(FIT)]) * 100
+            for j, n in enumerate(FIT):
+                ax.scatter(np.full(e.shape[0], j + (k - 1.5) * 0.15), np.maximum(e[:, j], 1e-3), s=5,
+                          color="C%d" % k, alpha=0.7, lw=0, label=prot if j == 0 else None)
+            summary["E9"][prot] = dict(zip(FIT, np.median(e, 0).round(2).tolist()))
+        ax.set_yscale("log"); ax.set_xticks(range(len(FIT)), FIT); ax.legend(fontsize=6.5, frameon=False, ncol=2)
+        ax.set_ylabel("|rel. error| (%)")
+        ax.set_title("E9  noise-free recovery vs operating point (p=0, 110, 120, 150)")
+        ax = axes[1]
+        summary["E10"] = {}
+        for k, p in enumerate(ps_firing):
+            for q, base in enumerate(("SP1000", "DOSE")):
+                prot = f"{base}@p{p}"
+                mm = sel(d, exp="E10", protocol=prot)
+                e = np.abs(err[mm, :len(FIT)]) * 100
+                cr = np.array(an["crb"][prot][0]["se7"]) * 100
+                c = "C%d" % (2 * k + q)
+                for j, n in enumerate(FIT):
+                    x = j + (2 * k + q - 1.5) * 0.18
+                    ax.scatter(np.full(e.shape[0], x), np.maximum(e[:, j], 1e-3), s=5, color=c, alpha=0.7, lw=0,
+                              label=prot if j == 0 else None)
+                    ax.plot([x - 0.08, x + 0.08], [cr[j]] * 2, color="k", lw=1.2)
+                summary["E10"][prot] = {"median_abs_err_pct": dict(zip(FIT, np.median(e, 0).round(2).tolist())),
+                                        "crb_pct": dict(zip(FIT, cr.round(2).tolist()))}
+        ax.set_yscale("log"); ax.set_xticks(range(len(FIT)), FIT); ax.legend(fontsize=6, frameon=False, ncol=2)
+        ax.set_ylim(1e-2, 500)
+        ax.set_title("E10  recovery at 0.42 µV noise, firing state. Black bars = CRB")
+        fig.suptitle("Pushing the node onto the firing branch: does the E-I loop become recoverable?", fontsize=9.5)
+        fig.tight_layout()
+        save(fig, "e9_e10_firing")
 
     # E8 temporal hold-out vs E1 full-window fits
     if sel(d, exp="E8").any():

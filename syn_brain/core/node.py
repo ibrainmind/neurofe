@@ -92,17 +92,32 @@ STIMS = {
     "EI1000":  Stim("EI1000", ((ONSET, 10, 1000.0),), to_i=0.5, label="pulse into E and I (50%)"),
 }
 STIM_ORDER = list(STIMS)
-# The same pulses delivered on top of a tonic background drive (operating point just
-# below the JR oscillation threshold), so the intrinsic E-I loop is engaged.
+# The same pulses delivered on top of a tonic background drive, at three operating
+# points (fixed point of the nominal node; see docs/background_drive_note.txt):
+#   p=110            just below the jump; still the quiet, near-linear state (E7)
+#   p=120            just above the jump onto the upper branch (threshold crossing)
+#   p=150            solidly on the upper branch, away from the jump (stable "active" state)
 P_DRIVEN = 110.0
-for _n in ("SP250", "SP1000", "SP4000"):
-    STIMS[_n + "@p110"] = Stim(_n + "@p110", STIMS[_n].pulses, tonic=P_DRIVEN,
-                               label=STIMS[_n].label + ", tonic drive p=110")
+FIRING_PS = (110.0, 120.0, 150.0)
+for _p in FIRING_PS:
+    for _n in ("SP250", "SP1000", "SP4000"):
+        _tag = f"@p{int(_p)}"
+        STIMS[_n + _tag] = Stim(_n + _tag, STIMS[_n].pulses, tonic=_p,
+                                label=STIMS[_n].label + f", tonic drive p={int(_p)}")
 DRIVEN_ORDER = [n for n in STIMS if n not in STIM_ORDER]
+
+# settle_ms=300 (the old default, still fine at p=0) is NOT enough once tonic drive is on:
+# relaxation to the fixed point slows sharply near and above the p~115-120 jump (critical
+# slowing down at the bifurcation). At gain~250 (a typical readout), the resulting
+# incompletely-settled pre-stimulus baseline drifts by up to ~0.5 uV between p=115 and
+# p=200 at settle_ms=300 -- bigger than the 0.42 uV sensor noise floor this study is
+# calibrated against -- and is still ~0.02 uV at settle_ms=900. It is <0.005 uV by
+# settle_ms=1500 at every p tested (0-240). See docs/background_drive_note.txt section 6.
+SETTLE_MS_DEFAULT = 1500
 
 
 # ------------------------------------------------------------------------------- simulate
-def simulate(theta: dict, stims: list[Stim], settle_ms: int = 300, T: int = T_WIN,
+def simulate(theta: dict, stims: list[Stim], settle_ms: int = SETTLE_MS_DEFAULT, T: int = T_WIN,
              gain: float = 1.0, dtype=torch.float64) -> torch.Tensor:
     """Noise-free single-node response for every (model, condition) pair.
 
@@ -126,7 +141,7 @@ def simulate(theta: dict, stims: list[Stim], settle_ms: int = 300, T: int = T_WI
     return simulate_rows(theta, idx, rows, settle_ms, T, gain, dtype).view(M, S, T)
 
 
-def simulate_rows(theta: dict, model_idx, stims_rows: list[Stim], settle_ms: int = 300,
+def simulate_rows(theta: dict, model_idx, stims_rows: list[Stim], settle_ms: int = SETTLE_MS_DEFAULT,
                   T: int = T_WIN, gain: float = 1.0, dtype=torch.float64) -> torch.Tensor:
     """Like `simulate`, but row i runs model theta[model_idx[i]] under stims_rows[i].
 

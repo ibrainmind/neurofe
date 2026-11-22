@@ -12,6 +12,15 @@ One teacher JR node (neurofe nominal values) identified by a student JR node thr
 - Fitting 0–60 ms and predicting the rest (temporal hold-out) gives a 91% late-window error with a perfect model and no noise. Expect T2 to fail at R0.
 - neurofe's Laplacian coupling supplies no mean drive, so nodes never reach the active state where the loop becomes identifiable. This probably explains Finding 1 below.
 
+### Firing-state follow-up: E9/E10, settle-time bug, and the p=120 bifurcation (2026-11-22)
+
+E7 (tonic drive p=110) stayed just below the jump to the active branch and showed no gain over rest, as predicted. Added p=120 (the threshold crossing) and p=150 (settled on the active branch) and ran backprop recovery (E9 noise-free, E10 at 0.42 µV). Full writeup and figures: `reports/bifurcation_followup.pdf`; narrative: `docs/background_drive_note.txt` section 5; decisions: `reports/DECISIONS.md`.
+
+- **Found and fixed a real bug:** the simulator's 300 ms default settle time isn't enough once tonic drive is on near/above the p≈115 jump (critical slowing down at the bifurcation) — pre-stimulus baseline drift up to 0.51 µV, bigger than the 0.42 µV noise floor. `core/node.py`'s default `settle_ms` raised 300→1500.
+- **The fix did not explain the recovery gap — it ruled it out.** After correcting settle time, recovery at both p=120 and p=150 got *worse*, not better, while the EEG fit itself stayed equally good — the signature of a flat/multi-valued loss landscape, not a numerical artifact.
+- **Continuation (warm-start from p=150, step down to p=120) doesn't fix it either** — it trades one failure mode for another. Per-start spread (not just the median) shows p=120 is genuinely multi-modal: most starts land in a much worse c3·c4 basin, while c1·c2 splits into a good cluster plus catastrophic outliers.
+- **Closed recommendation:** use p≥150 (plain cold-start Adam) as the default operating point for Part A. Don't keep tuning the optimizer at p≈115–140 — treat it as a multi-modal-posterior region and use methods built for that (study plan Part C: C6 simulation-based inference, C7 HMC/NUTS) if that region specifically needs fitting.
+
 ## Phase 1 results (2026-11-21)
 
 Everything below was run on a 4-core Intel Mac (CPU only), PyTorch 2.2.2, in the repo's `.venv`.

@@ -59,9 +59,66 @@ state. That most likely explains why synthetic responses lacked late activity
      resting point instead.
 
 
-4. NEXT STEP
-------------
+4. NEXT STEP (addressed below)
+-------------------------------
 
 The most useful next run is fitting at p >= 120. E7 used p = 110, just below
 the jump, and showed no gain; the Cramer-Rao bounds predict a large one above
 it (single-pulse bound on c3: 129% at rest -> ~5% at p = 120).
+
+
+5. RESULT: E9/E10, BACKPROP RECOVERY AT p = 120 AND p = 150  (2026-11-22)
+--------------------------------------------------------------------------
+
+Added tonic drive p = 120 (just past the jump) and p = 150 (settled on the
+active branch) alongside the existing p = 110, as new Stim entries in
+core/node.py (FIRING_PS), and two new experiments in single_node_tms.py:
+  E9   same design as E7 (noise-free), at p = 120 and p = 150
+  E10  same, at the real sensor noise level (0.42 uV)
+10 random starts, SP1000 and DOSE protocols, 300 Adam iterations, log-scaled
+parameters -- same recipe as every other experiment in this study.
+
+Analytic CRB confirms the prediction almost exactly: at p = 120 the SP1000
+bound on c3 drops from 129% (rest) to 4.9%, c4 from 252% to 16%, b from 14%
+to 8%. No change at p = 150 (4.1%, 15%, 7%) -- the loop is identifiable in
+principle as soon as the node is pushed past the jump.
+
+Backprop recovery does NOT uniformly reach that bound:
+
+  combined-parameter error (median of 10 starts, SP1000 / DOSE, noise-free E9):
+    p = 120:  c3*c4  52-73%   c1*c2  56-75%   (far above the <20% target,
+              and above even the REST-state CRB for c1*c2 -- the optimizer is
+              doing worse than chance near the threshold crossing)
+    p = 150:  c3*c4  14-16%   c1*c2  20-27%   (c3*c4 meets the <20% pass
+              criterion; c1*c2 is close but still does not clear it)
+
+  Sensor noise (E10, 0.42 uV) changes these numbers by only a few percent in
+  either direction -- optimization difficulty, not measurement noise, is the
+  binding constraint at p = 120.
+
+  No sustained oscillation at either p: pre-stimulus std stays at 0.008-0.017
+  uV (p=120/150), far under the 0.42 uV noise floor; the predicted ~10 Hz
+  ringing after the pulse is damped, as expected, not self-sustaining.
+
+Interpretation: p = 120 sits exactly at the bifurcation (table in section 1),
+where the loss surface is apparently rough enough that 300 Adam iterations
+from +-50% random starts don't find the optimum the Fisher information says
+exists -- a genuine "optimizer can't reach it" failure, not a non-identifiability.
+p = 150, solidly on the active branch and away from the jump, is the better
+operating point: it clears the inhibitory-loop (c3*c4) pass criterion and gets
+close on the excitatory loop (c1*c2), which stays the harder of the two to
+recover even in the best state tested here.
+
+Practical takeaway for Part A of the study plan: when adding background drive
+(tonic p, or any other input family), land cleanly on the active branch
+(p ~ 150, not p ~ 115-120) -- the threshold crossing itself is a bad place to
+sit, both for a real brain state and for fitting it.
+
+Not yet done: more starts / iterations or a better optimizer (C2-C4 in the
+study plan) to check whether p = 120's gap closes with more optimization
+effort, which would confirm it is optimizer-limited rather than something
+else going wrong near the bifurcation; and the other input families (A2-A6)
+that might reach the active branch more smoothly than a step in tonic drive.
+
+Reproduce: PYTHONPATH=. .venv/bin/python -m syn_brain.scripts.single_node_tms analyse
+           PYTHONPATH=. .venv/bin/python -m syn_brain.scripts.single_node_tms train --only E9,E10

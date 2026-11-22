@@ -79,7 +79,7 @@ From the repo root:
 
   core/node.py                      single-node JR simulator, programmable virtual-TMS
                                     input (pulses, E/I targeting, tonic drive p)
-  scripts/single_node_tms.py        protocols, experiments E1-E8, analyse/train
+  scripts/single_node_tms.py        protocols, experiments E1-E10, analyse/train
   scripts/single_node_tms_figures.py  figures -> results/single_node_tms/fig_*.png,
                                     summary.json
   scripts/single_node_tms_report.py   PDF layout (reportlab)
@@ -109,7 +109,9 @@ From the repo root:
   - New experiment: append jobs in build_jobs() with a new exp="E9" tag, run
         ... single_node_tms train --only E9 --part $p --nparts N
     and add its figure in single_node_tms_figures.py.
-  - Suggested first: E7 at p >= 120 (see docs/background_drive_note.txt).
+  - Done: E9/E10 at p=120 and p=150 (see docs/background_drive_note.txt section 5).
+    Suggested next: more starts/iterations at p=120 to confirm the recovery gap
+    there is optimizer-limited, and the other Part A input families (A2-A6).
 
 Numbers can differ slightly between machines (thread scheduling, BLAS), but
 conclusions should not.

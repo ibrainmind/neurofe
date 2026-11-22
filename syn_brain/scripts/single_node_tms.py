@@ -17,8 +17,12 @@ Sub-commands
               E4  sensor noise at the real TMS-EEG level (0.42 uV)
               E5  profile likelihood: one parameter pinned off-truth, others refitted
               E6  4 perturbed teachers (robustness of E1)
-              E7  driven operating point (tonic background drive p=110)
+              E7  driven operating point (tonic background drive p=110, below the jump)
               E8  temporal hold-out: fit 0-60 ms after the pulse, predict the late response
+              E9  firing-state recovery: tonic drive p=120 (threshold crossing) and
+                  p=150 (stable active state), noise-free
+              E10 firing-state recovery at p=120/150, sensor noise 0.42 uV (pass
+                  criteria of docs/single_node_study_plan.txt Part A)
             Split across processes with --part/--nparts.
 
 Usage (repo root):
@@ -53,9 +57,11 @@ PROTOCOLS = {s: [s] for s in node.STIM_ORDER}
 PROTOCOLS["DOSE"] = ["SP250", "SP1000", "SP4000"]
 PROTOCOLS["RICH"] = ["SP250", "SP1000", "SP4000", "PP100", "TR10", "EI1000"]
 PROTOCOLS["ALL"] = list(node.STIM_ORDER)
-PROTOCOLS["SP1000@p110"] = ["SP1000@p110"]
-PROTOCOLS["DOSE@p110"] = ["SP250@p110", "SP1000@p110", "SP4000@p110"]
+for _p in node.FIRING_PS:
+    PROTOCOLS[f"SP1000@p{int(_p)}"] = [f"SP1000@p{int(_p)}"]
+    PROTOCOLS[f"DOSE@p{int(_p)}"] = [f"SP250@p{int(_p)}", f"SP1000@p{int(_p)}", f"SP4000@p{int(_p)}"]
 E1_PROTOCOLS = list(node.STIM_ORDER) + ["DOSE", "RICH"]
+FIRING_PROTOCOLS = [f"{s}@p{int(p)}" for p in (120.0, 150.0) for s in ("SP1000", "DOSE")]
 
 
 def readout():
@@ -287,6 +293,13 @@ def build_jobs(n_starts: int, rng):
         for s in range(n_starts):
             jobs.append(dict(exp="E8", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log",
                              noise=0.0, window="early"))
+    # E9/E10: firing-state recovery -- same design as E7, extended past the jump (p=120, 150),
+    # noise-free (E9, extends E7) and at realistic sensor noise (E10, extends E4). This is the
+    # "push to the firing branch" run called for in docs/background_drive_note.txt.
+    for p in FIRING_PROTOCOLS:
+        for s in range(n_starts):
+            jobs.append(dict(exp="E9", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log", noise=0.0))
+            jobs.append(dict(exp="E10", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log", noise=SIGMA))
     for j in jobs:
         j.setdefault("pin", -1); j.setdefault("pin_z", 0.0); j.setdefault("window", "full")
     return jobs, teachers
