@@ -81,7 +81,7 @@ for s in 0 1 2; do .venv/bin/python -m syn_brain.scripts.recover_small --teacher
 .venv/bin/python -m syn_brain.scripts.make_teacher --seeds 0 1 2 3 --rung R0 --sites 8   # Phase 2 data
 ```
 
-PyTepFit's data are read from `~/projects/PyTepFit/data`; set `SYN_BRAIN_PYTEPFIT_DATA` to point elsewhere.
+PyTepFit's anatomy (leadfield, connectome, distances; MIT license) is vendored in `external/pytepfit/`. Its real TMS-EEG file, needed only by `calibrate_teacher.py`, is fetched with `bash syn_brain/scripts/fetch_pytepfit_data.sh`. Set `SYN_BRAIN_PYTEPFIT_DATA` to use another copy.
 
 ## Why this study
 

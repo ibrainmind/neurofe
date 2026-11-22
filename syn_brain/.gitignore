@@ -5,3 +5,7 @@ logs/*
 !data/.gitkeep
 !results/.gitkeep
 !logs/.gitkeep
+
+# Large PyTepFit file, fetched by scripts/fetch_pytepfit_data.sh
+external/pytepfit/*.mat
+external/pytepfit/*.part
