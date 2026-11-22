@@ -1,0 +1,344 @@
+SINGLE-NODE STUDY PLAN: NETWORK DRIVE, DISEASE MARKERS AND FITTING METHODS
+===========================================================================
+
+Status : proposed, 2026-11-22
+Builds on : the first single-node virtual-TMS study (experiments E1-E8)
+Report : syn_brain/reports/single_node_tms_study.pdf
+
+
+1. WHY THIS PLAN
+----------------
+
+The first single-node study fitted a Jansen-Rit (JR) "student" node to a
+"teacher" node with neurofe's nominal parameters, using backpropagation (Adam),
+under nine virtual-TMS protocols. It found:
+
+  * At nominal values the node is almost a linear filter. With no background
+    input it rests far below the firing threshold (E-I ~ -1.9 mV against
+    v0 = 6 mV), where the sigmoid slope is ~0.03 out of a possible 0.7. The
+    pulse response is fixed by the stimulus gain k*A and the excitatory rate a.
+    The intrinsic E-I loop (c1-c4, b) only shows as a 0.6 uV late dip, close to
+    the real sensor noise (0.42 uV).
+
+  * Two scaling symmetries make some parameters unidentifiable even in
+    principle:
+        (A, B) x lam   with (c1..c4, k) / lam
+        vmax x lam     with (A, B) / lam and k x lam
+    Both change the EEG by < 1.5 uV out of 60. A, B and vmax are conventions,
+    not measurements.
+
+  * Most parameters are sloppy. Cramer-Rao bounds for one single pulse:
+    k 0.9%, a 2.5%, b 14%, c1-c4 56-250%. Fisher eigenvalues span six orders
+    of magnitude.
+
+  * Stimulus design helps, but less than brain state. Multi-amplitude,
+    E+I-targeted and train protocols tighten b to 0.15% and c1 to 7.5%.
+    A tonic background drive above p ~ 115 cuts the c3 bound from 129% to ~5%.
+
+  * The optimizer is a limit of its own. neurofe's raw parameterisation
+    (Adam, lr 0.05) ends with ~300x higher loss and ~10x larger errors on a and
+    k than log-scaled parameters, on the same data.
+
+Open questions addressed here:
+
+  Q-A  How can a single node be given network-like input, so that the sigmoid
+       and the E-I loop take part in the response, while keeping a clean
+       teacher/student test?
+  Q-B  Which disease mechanisms (e.g. neurodegeneration) can TMS-EEG detect IN
+       PRINCIPLE, judged from the identifiable / non-identifiable partition of
+       the model, before touching real data?
+  Q-C  Which fitting methods, inside or beyond neurofe's PyTorch
+       backpropagation, best recover what is identifiable and report what is
+       not?
+
+
+2. THEORY: THE TRANSFER FUNCTION OF ONE JR NODE
+-----------------------------------------------
+
+Around its resting point a JR node is a linear system. With the synaptic kernels
+
+    H_a(s) = a / (s+a)^2        (excitatory)
+    H_b(s) = b / (s+b)^2        (inhibitory)
+
+injected input U and EEG source V = E - I:
+
+                           A k H_a(s)
+    V(s) = -------------------------------------------------- U(s)
+            1 - A S'_P H_a(s) [ L_E H_a(s) - L_I H_b(s) ]
+
+    L_E = A c1 c2 S'_E        excitatory loop gain
+    L_I = B c3 c4 S'_I        inhibitory loop gain
+    S'_P, S'_E, S'_I          sigmoid slopes at the resting point
+
+The EEG constrains only the coefficients of V(s): input gain A*k, time
+constants a and b, and loop gains L_E and L_I (weighted by S'_P).
+Consequences:
+
+  1. c1 and c2 enter only as a product, as do c3 and c4. Their ratios are
+     invisible in the linear regime; only the sigmoid's nonlinearity separates
+     them, and only weakly.
+  2. When S' is small (an inactive node) the loop terms vanish and only A*k and
+     a are identifiable. This matches the measured bounds.
+  3. Whatever raises S' (background drive, higher excitability) makes the loop
+     identifiable. IDENTIFIABILITY DEPENDS ON BRAIN STATE, NOT ONLY ON THE
+     STIMULUS.
+
+Task T0 (section 7) checks this formula against the simulator before anything
+else relies on it.
+
+
+3. PART A: NETWORK-LIKE INPUT TO A SINGLE NODE (Q-A)
+----------------------------------------------------
+
+Aim
+  Move the node's operating point onto the steep part of the sigmoid, as input
+  from the rest of the brain would. Then measure how identifiability and
+  generalization change, keeping teacher and student exactly matched
+  (rung R0).
+
+Input families
+
+  ID  Input                              Imitates                       Known to student?
+  --  ---------------------------------  -----------------------------  ---------------------------
+  A1  Tonic drive p, swept 0-240         mean afferent input            known (A1a) / fitted (A1b)
+                                         g * sum_j w_ij E_j
+  A2  Ornstein-Uhlenbeck or 1/f noise,   ongoing resting-state          statistics known; shared
+      mean mu, std sigma                 activity                       noise seed, or fit trial
+                                                                        averages and spectra
+  A3  Sinusoid / chirp (1-40 Hz); pulse  tACS, phase-dependent TMS      known
+      at controlled phase of alpha
+  A4  Delayed self-feedback (gain g,     re-entrant cortico-cortical    g, tau fitted
+      delay tau): a "mirror" node        and thalamo-cortical loops
+  A5  Replayed network input: the        node embedded in the real      known (open loop)
+      afferent signal
+      sum_j w_ij E_j(t - d_ij) a parcel
+      receives in the 200-node teacher,
+      injected as known drive
+  A6  Population targeting: pulse into   TMS recruiting different       mixing fraction known (A6a)
+      E, I, P, or mixtures               cell types                     / fitted (A6b)
+
+How much drive is needed (fixed point of the nominal node)
+
+  p        resting E-I     pyramidal sigmoid slope   state
+  -------  --------------  ------------------------  ----------------------------------
+  0        -1.9 mV         0.03                      rest, near-linear
+  100      1.6 mV          0.20                      rest
+  110      2.1 mV          0.25                      rest
+  115-120  6.0 mV (= v0)   0.70 (max)                jump to upper branch, damped alpha
+  150-220  6.3-6.7 mV      0.67-0.70                 active
+  320      7.4 mV          0.61                      active
+
+  Note: neurofe itself has no mean input. Its coupling is a Laplacian,
+  g * sum_j w_ij (E_j(t - d_ij) - E_i), which is zero when all nodes rest at
+  the same state, and its noise has zero mean. So every neurofe node rests in
+  the inactive state, which probably explains the missing late TEP activity
+  (README Finding 1). Candidate changes to neurofe, tested here first:
+    - a mean input parameter p (global or per node) added to rE;
+    - non-diffusive coupling g * sum_j w_ij S(E_j(t - d_ij)) (positive
+      firing rates give a mean drive that grows with g and node degree);
+    - noise with non-zero mean;
+    - lower v0 (excitability) instead of more input.
+
+Data types
+  - evoked response (TEP), as now
+  - pre-stimulus power spectrum (A2, A5): informative about b and loop gains
+  - frequency response H(jw) (A3)
+
+Measurements, for every input family
+  1. Cramer-Rao bounds for the 7 fitted parameters and for the identifiable
+     combinations (A*k, a, b, L_E, L_I), at nominal values and at 8 random
+     teachers.
+  2. Backprop recovery from 10 random starts (+-50%), noise-free and at
+     0.42 uV sensor noise.
+  3. Generalization to held-out stimuli and to a held-out late window
+     (the E8 design), scored on both full and late windows.
+  4. Operating-point checks: sigmoid slopes, distance from the p ~ 115 jump to
+     the active state, and no sustained oscillation in teacher or student.
+
+Decision
+  The input family that brings the c3*c4 and c1*c2 bounds below 20% at
+  realistic noise, without sustained oscillation, becomes the default
+  single-node teacher for Phase 2. If none does, the late TEP cannot constrain
+  the loop parameters even in the best case, and that is reported as a limit
+  of the method.
+
+
+4. PART B: HEALTHY VS DISEASED NODES, ON PAPER FIRST (Q-B)
+----------------------------------------------------------
+
+Aim
+  Decide, from the model alone, which disease mechanisms TMS-EEG can detect,
+  at what effect size, and under which stimulation and brain state. Only
+  mechanisms that pass this test are taken to real data.
+
+Parameter-to-biology map
+
+  Parameter      Biology                    Disease link                   Identifiability (current)
+  -------------  -------------------------  -----------------------------  ---------------------------
+  a (1/tau_e)    AMPA/NMDA kinetics,        slowing in Alzheimer's         STIFF: identifiable from a
+                 membrane time constant     disease (AD), delirium         single pulse
+  b (1/tau_i)    GABA-A IPSP decay          GABAergic dysfunction,         CONDITIONAL: needs E+I
+                                            benzodiazepine effects         targeting or engaged loop
+  L_I ~ B*c3*c4  inhibitory loop strength   interneuron (PV) loss: AD,     CONDITIONAL: only as a
+                                            epilepsy, schizophrenia        product, only when the loop
+                                                                           is engaged
+  L_E ~ A*c1*c2  recurrent excitation       synapse loss, the best         CONDITIONAL: as above
+                                            correlate of cognitive
+                                            decline in AD
+  c1/c2, c3/c4   which synapse in the loop  lesion location in circuit     SLOPPY: weak, through
+                 is affected                                               nonlinearity only
+  A vs c's,      synapse strength vs        receptor dysfunction vs        GAUGE: never identifiable
+  B vs c4        synapse number             synapse loss                   from EEG
+  v0, r, vmax    excitability, threshold    hyperexcitability,             GAUGE / SLOPPY: v0 trades
+                 spread, max firing rate    channelopathies                off with background drive
+  A*k            input gain, incl. coil-    ATROPHY increases scalp-to-    STIFF but CONFOUNDED with
+                 to-cortex distance         cortex distance, lowering k    EPSP strength A
+
+Experiments (disease teacher changed from the nominal or the Part A teacher)
+
+  B1  c1*c2 x 0.7        excitatory synapse loss
+  B2  c3*c4 x 0.7        interneuron loss
+  B3  b x 0.8            slowed GABA-A inhibition
+  B4  a x 0.8            slowed excitation
+  B5  v0 - 0.5 mV        hyperexcitability
+  B6  k x 0.8            atrophy (confound control)
+  B7  B1 + B6            synapse loss with atrophy
+
+For each, at the resting state and at the best Part A state:
+  1. Detectability: Fisher distance between healthy and diseased responses,
+     d' = sqrt(dtheta' F dtheta), and the smallest change detectable at
+     0.42 uV noise for a given trial count.
+  2. Attribution: fitted separately to healthy and diseased teachers, does the
+     student move the RIGHT combination? (In B6, does it blame k, or wrongly
+     blame A*c1*c2?)
+  3. State-dependent bias: fit "patients" and "controls" at different
+     operating points (hypoactive diseased node vs normal control) and measure
+     the spurious group difference created only by unequal identifiability.
+
+Deliverable
+  A table of mechanism x protocol x brain state with three entries each:
+  detectable (d' > 2 at realistic noise), correctly attributed, free of state
+  bias. This is the list of model-based biomarkers worth testing on real data.
+  Each comes with the protocol and auxiliary data it needs (e.g. E-field
+  modelling to fix k).
+
+
+5. PART C: FITTING METHODS (Q-C)
+--------------------------------
+
+Aim
+  Separate "not identifiable" from "the optimizer can't reach it", and choose
+  the fitting method for the real-data pipeline.
+
+Methods
+
+  ID   Method                               Implementation                 Tests
+  ---  -----------------------------------  -----------------------------  ------------------------------
+  C0   Adam on raw values, lr 0.05          current code (E2)              baseline
+       (neurofe today)
+  C1   Adam on log-scaled values            current code (E1)              parameterisation
+  C2   Levenberg-Marquardt / Gauss-Newton   full Jacobian by autograd      second-order steps along
+       (geodesic LM for sloppy models)      (7-15 parameters)              sloppy valleys
+  C3   L-BFGS                               torch.optim.LBFGS              cheap quasi-Newton
+  C4   Reparameterised to identifiable      wrapper around simulator       whether removing degeneracy
+       combinations (A*k, a, b, L_E, L_I);                                 removes fitting problems
+       A, B, vmax fixed
+  C5   Variational Laplace (DCM-style)      own implementation on the      posterior covariance: "prior-
+       with Gaussian priors                 differentiable simulator;      dominated" vs "data-informed"
+                                            cross-check with SPM
+                                            spm_nlsi_GN if available
+  C6   Simulation-based inference (neural   sbi package, ~1e5 batched      full posterior shape (curved
+       posterior estimation)                simulations                    ridges, multiple modes); no
+                                                                           gradients, so mu and integer
+                                                                           delays are fine
+  C7   Hamiltonian Monte Carlo (NUTS)       NumPyro or Stan port           exact reference posterior
+                                            (few parameters only)          for C5 and C6
+  C8   Unscented / ensemble Kalman filter   own implementation             single noisy trials, unknown
+       (joint state + parameters)                                          background input (A2, A5)
+  C9   Frequency-domain fitting (transfer   analytic H(s), section 2       fast, exact targeting of the
+       function and spectra)                                               identifiable combinations;
+                                                                           TEP + spectrum jointly
+  C10  Optimal experimental design:         Fisher code from the current   which virtual-TMS protocol to
+       protocol maximising det(F) for a     study                          record for each Part B marker
+       target marker
+
+Benchmark (same teachers, protocols and noise for every method)
+  - recovery of the identifiable combinations
+  - calibration of reported uncertainty (does the 90% interval contain the
+    truth ~90% of the time?)
+  - generalization to held-out stimuli and late windows
+  - wall-clock cost
+
+Expected outcome (stated now so it can be falsified)
+  - C2, C4 and C9 recover the identifiable combinations as well as or better
+    than C1, in 10-100x fewer iterations.
+  - No method recovers the individual c's at rest.
+  - C5-C7 show the c's as prior-dominated.
+  If a method recovers individual c's at rest, that contradicts section 2 and
+  must be explained before going further.
+
+
+6. PASS CRITERIA (TO AGREE BEFORE RUNNING)
+------------------------------------------
+
+  Part A input family : c1*c2 and c3*c4 bounds < 20% at 0.42 uV noise; no
+                        sustained oscillation; backprop median error < 2x the
+                        bound
+  Part B marker       : d' > 2 for a 20-30% change at realistic trial counts;
+                        correct attribution in >= 8 of 10 starts; state-bias
+                        effect < half the true effect
+  Part C method       : 90% interval coverage between 80% and 98%;
+                        identifiable combinations within 2x their bounds
+
+
+7. TASKS AND SCHEDULE
+---------------------
+
+All steps use the batched single-node simulator (core/node.py). One fit of
+300 iterations for ~100 models takes ~20 min on 4 CPU cores.
+
+  Week 1  T0: confirm the analytic H(s) reproduces the simulator's small-signal
+          response; add A1b, A2, A3, A6 to core/node.py; Fisher sweeps.
+          Gate: section 2 formula matches the simulator to < 1%.
+  Week 2  A4, A5 (record afferent input in the 200-node teacher); backprop
+          recovery and generalization for A1-A6.
+          Gate: default teacher state chosen.
+  Week 3  B1-B7 detectability and attribution, at rest and in the default
+          state.
+          Gate: biomarker table.
+  Week 4  C2, C3, C4, C9 (deterministic methods).
+          Gate: method choice for point estimates.
+  Week 5  C5, C6, C8 (posteriors, noisy trials); C10 for the top markers.
+          Gate: method for uncertainty; recommended protocols.
+  Week 6  Write-up; move reusable parts into neurofe/validation/; feed choices
+          into Phase 2 of the main study.
+
+
+8. RISKS
+--------
+
+  Background drive pushes the teacher into sustained oscillation (phase-
+  dependent responses, rough loss surface)
+      -> keep p below the jump in A1, or fit phase-aligned averages; monitor
+         pre-stimulus variance.
+  Results depend on the nominal point
+      -> repeat key results at 8 random teachers (+-30%), as in the current
+         study.
+  One-node conclusions don't carry over to the network
+      -> A5 (replayed network input) is the bridge; Phase 2 re-tests the
+         chosen markers in the network.
+  Biology mapping too coarse (JR lumps cell types)
+      -> report markers as model quantities with a stated biological reading,
+         never as direct measurements.
+
+
+9. FILES
+--------
+
+  syn_brain/docs/single_node_study_plan.txt     this plan
+  syn_brain/core/node.py                        single-node simulator with programmable
+                                                virtual-TMS input
+  syn_brain/scripts/single_node_tms.py          analyse / train (E1-E8)
+  syn_brain/scripts/single_node_tms_figures.py  figures and summary.json
+  syn_brain/scripts/single_node_tms_report.py   PDF report
+  syn_brain/reports/single_node_tms_study.pdf   results of the first single-node study

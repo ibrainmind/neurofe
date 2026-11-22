@@ -1,0 +1,67 @@
+BACKGROUND DRIVE AND THE CONNECTION BETWEEN JR NODES  (open item, to address later)
+=================================================================================
+
+Date    : 2026-11-22
+Source  : single-node virtual-TMS study (reports/single_node_tms_study.pdf,
+          section 3.2) and docs/single_node_study_plan.txt, Part A
+Context : came up in a discussion of how JR nodes are connected in neurofe.
+          Answer given: the connection is approximately linear. The findings
+          below tie directly to that.
+
+
+1. HOW TO ADD BACKGROUND INPUT SO THE NODE REACHES FIRING THRESHOLD
+-------------------------------------------------------------------
+
+The pyramidal cells fire when their membrane potential E-I approaches
+v0 = 6 mV. With no background input the nominal node rests at E-I = -1.9 mV.
+
+A constant drive p into the excitatory input raises E by about
+(A/a)*p = 0.0325 mV per unit of p. Recurrent excitation amplifies that, until
+the node jumps across threshold (fixed point of the nominal node):
+
+  Drive p   Resting E-I     Sigmoid slope (max 0.70)   State
+  -------   -------------   ------------------------   -----------------------------------
+  0         -1.9 mV         0.03                       quiet, behaves like a linear filter
+  100       1.6 mV          0.20                       quiet
+  110       2.1 mV          0.25                       quiet (this is where E7 ran)
+  115-120   6.0 mV = v0     0.70                       jumps to the active state; rings at
+                                                       ~10 Hz after a pulse
+  150-220   6.3-6.7 mV      0.67-0.70                  active
+
+In the single-node code this is just Stim(..., tonic=p) in core/node.py.
+Jansen and Rit's original p was 120-320 /s, physically the mean firing rate
+arriving from other areas and the thalamus.
+
+
+2. NEUROFE HAS NO SUCH INPUT
+----------------------------
+
+neurofe's long-range coupling (neurofe/models/jansen_rit.py) is a Laplacian:
+
+    g * sum_j w_ij * ( E_j(t - d_ij) - E_i )
+
+It is zero whenever all nodes rest at the same state, and the noise input has
+zero mean. So every node in a neurofe network sits in the quiet, near-linear
+state. That most likely explains why synthetic responses lacked late activity
+(Finding 1 in syn_brain/README.md).
+
+
+3. OPTIONS (also in the study plan and the report's recommendations)
+--------------------------------------------------------------------
+
+  a. Add a mean-input parameter p, global or per node, to the excitatory
+     drive rE.
+  b. Switch to non-diffusive coupling  g * sum_j w_ij * S(E_j(t - d_ij)):
+     neighbours send firing rates, which are positive, so each node receives
+     a net drive that grows with g and its degree.
+  c. Use noise with a non-zero mean.
+  d. Lower v0 (more excitable cells), which moves the threshold toward the
+     resting point instead.
+
+
+4. NEXT STEP
+------------
+
+The most useful next run is fitting at p >= 120. E7 used p = 110, just below
+the jump, and showed no gain; the Cramer-Rao bounds predict a large one above
+it (single-pulse bound on c3: 129% at rest -> ~5% at p = 120).

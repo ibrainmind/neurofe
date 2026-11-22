@@ -1,6 +1,87 @@
 # syn_brain: Synthetic-Brain Recovery Study
 
-**Status:** planned, not implemented yet. This folder will hold the study code and results.
+**Status:** Phase 1 (build and calibrate) code is in place; the Phase 1 gate **did not pass**. See [Phase 1 results](#phase-1-results-2026-11-21) before starting Phase 2.
+
+## Single-node virtual-TMS study (2026-11-22)
+
+One teacher JR node (neurofe nominal values) identified by a student JR node through backpropagation, under 12 virtual-TMS conditions. Report: `reports/single_node_tms_study.pdf`; follow-up plan: `docs/single_node_study_plan.txt`; open item on background drive: `docs/background_drive_note.txt`. To re-run: `bash syn_brain/scripts/run_single_node_tms.sh` (details in `docs/single_node_rerun.txt`).
+
+- At nominal values a node with no background input is almost a linear filter. Only k·A (P1 amplitude) and a (P1 latency) are well identified; the E–I loop (c1–c4, b) leaves a 0.6 µV trace.
+- A, B and vmax are exactly degenerate with the c's and k (two scaling symmetries), so they must stay fixed.
+- neurofe's raw parameterisation (Adam, lr 0.05) is the main reason Phase 1 only recovered k: same data, log-scaled parameters reach ~250× lower loss.
+- Fitting 0–60 ms and predicting the rest (temporal hold-out) gives a 91% late-window error with a perfect model and no noise. Expect T2 to fail at R0.
+- neurofe's Laplacian coupling supplies no mean drive, so nodes never reach the active state where the loop becomes identifiable. This probably explains Finding 1 below.
+
+## Phase 1 results (2026-11-21)
+
+Everything below was run on a 4-core Intel Mac (CPU only), PyTorch 2.2.2, in the repo's `.venv`.
+
+### What works
+
+- **The teacher simulator is exact.** `core/simulator.py` reproduces neurofe's `JansenRit.forward` to floating-point precision, with both plain and perturbed SC (`tests/test_simulator.py`). Teacher and student are therefore the same model in rung R0. The simulator runs many trials as one batch: 100 trials of one site on the 200-parcel brain take about 45 s.
+- **Fitting cost is known.** One `JansenRit.fit` epoch takes about 5 s at both 10 and 200 parcels, because Python overhead dominates. A standard 120-epoch fit takes about 10 minutes, and about 3 fits can run in parallel on this machine.
+
+### Finding 1: synthetic TEPs with nominal parameters don't look like real TMS-EEG
+
+`scripts/calibrate_teacher.py` compared teachers (nominal parameters plus random draws, 2 sites each, 100 trials) with the 20 real subjects in PyTepFit's data:
+
+| Feature | Real TMS-EEG (median of 20) | Synthetic teacher |
+| --- | --- | --- |
+| GMFA peak | 6.1 µV at ~105 ms | 24–38 µV at 14 ms |
+| Late/early GMFA ratio | 0.84 | 0.15–0.19 |
+| Baseline std | 0.42 µV | ~0 µV (the model's own noise barely reaches the EEG) |
+
+The synthetic response is one large early peak that decays by ~50 ms. With so little late activity, the temporal hold-out test (T2) would be trivially easy or meaningless. **Before Phase 2, the teacher needs realistic late dynamics.** Options:
+
+1. Use teachers *fitted to real subjects*: fit S3 to a real TEP and use the fitted model as ground truth.
+2. Search the parameter space, including `w_bb`, for draws whose TEPs match the real features above.
+
+Figure: `results/calibration/calibration.png`.
+
+### Finding 2: the Phase 1 gate fails; S1 doesn't recover a clean teacher
+
+`scripts/recover_small.py` used 3 teachers on a 10-node network at R0, student S1, weak priors, 120 epochs, lr 0.05. The student starts at nominal values; a progress of 1 means it reached the truth.
+
+| Parameter | Behaviour across the 3 teachers | Why |
+| --- | --- | --- |
+| `k` (stimulation gain) | **Recovered** (errors −2.6%, +6.3%, +0.3%) | Directly scales the early peak; by far the largest gradient |
+| `mu` (conduction velocity) | **Never moves** | Delays are cast to integers (`(dist / mu).type(torch.int64)`), so `mu` gets **no gradient**. It can't be learned by backprop in neurofe or in the PyTepFit code this mirrors |
+| `g`, `c1`, `c2` | Stay at their starting values | Gradients about 10⁻⁶, about 10⁴× smaller than `a` or `k` |
+| `b`, `c4`, `std_in` | Move to the **same values whatever the truth** (`b` ≈ 40, `c4` ≈ 42, `std_in` ≈ 282) | They absorb mismatch between the fitting procedure and the data, not information about the teacher |
+| `a`, `c3` | Inconsistent | — |
+
+EEG fit after training: Pearson 0.985–0.995, the same as the **untrained** nominal model (0.979–0.997). Relative RMSE improves about 25% (for example 0.113 → 0.082). Pearson on these responses is dominated by the leadfield pattern of the stimulated site and barely depends on the parameters, so high Pearson says little about whether a fit is right.
+
+What this means for the questions:
+
+- **Q1 (identifiability) is answered "no" for most parameters, even in the best case.** That supports the concern behind Ye's results: a good fit does not mean the parameters were found.
+- **Conduction velocity is a structural blind spot.** Correcting `mu` by hand (one of Ye's attempts) can't be matched by the optimizer, because it never updates `mu`.
+- **The proposed Q1 threshold is flawed.** Teachers are drawn within ±15% of nominal, so a student that never moves already lands "within 20% of truth". Use the progress measure, or draw over a wider range.
+
+### Other quirks found
+
+- **Training error rises before it falls.** `JansenRit.fit` runs one continuous simulation across epochs with no warm-up. Epoch 0 starts from a quiet state and has the lowest error (0.088); epochs 1–3 jump to about 0.30, then error slowly falls to about 0.19. Error at the end of training is higher than after epoch 0.
+- **Training and prediction see different conditions.** Training compares one noisy run against a trial average with no warm-up; `predict` uses a 1 s warm-up. Evaluation here uses the batched simulator with 100-trial averages, matching how the teacher is generated.
+- **The noise floor can't be removed.** neurofe hard-codes a noise std lower bound of 150, so a noise-free student run is impossible in neurofe. The batched simulator has `noise_scale` (0 = noise-free) for that comparison.
+
+### Suggested next steps (to decide with Ye before Phase 2)
+
+1. Fix teacher realism (Finding 1), most likely with option 1, teachers fitted to real subjects.
+2. Re-run the gate with a wider draw range (±40%), the progress criterion, the PyTepFit priors, and a higher learning rate for large-scale parameters such as `g`. This tells apart "not identifiable" from "optimizer can't reach it".
+3. Decide whether `mu` should become differentiable, for example with fractional delays by linear interpolation of the history buffer. This changes neurofe itself.
+
+### How to reproduce
+
+From the repo root:
+
+```bash
+.venv/bin/python -m pytest syn_brain/tests -q                     # 4 tests, ~40 s
+.venv/bin/python -m syn_brain.scripts.calibrate_teacher --teachers 2 --sites 2
+for s in 0 1 2; do .venv/bin/python -m syn_brain.scripts.recover_small --teacher-seed $s --epochs 120 & done; wait
+.venv/bin/python -m syn_brain.scripts.make_teacher --seeds 0 1 2 3 --rung R0 --sites 8   # Phase 2 data
+```
+
+PyTepFit's data are read from `~/projects/PyTepFit/data`; set `SYN_BRAIN_PYTEPFIT_DATA` to point elsewhere.
 
 ## Why this study
 
@@ -121,22 +202,30 @@ T2 and T3 reuse the existing hold-out scripts from the real-data tests, pointed 
 | Passes R0–R1, fails at rung Rk | Mismatch k is the leading candidate for the real-data failure | Model or remove that mismatch in the real data, then re-run the real-data tests |
 | Passes every rung | The ladder does not explain the real-data results | Audit the real-data pipeline: preprocessing, trial alignment, leadfield and SC registration |
 
-## Planned layout
+## Layout
 
 ```
 syn_brain/
-  README.md          this plan
-  configs/           one config per rung (R0–R6) and student tier (S1–S3)
-  teacher.py         draw teacher parameters, simulate trials per site, add sensor noise
-  protocols.py       tests T1–T4, wrapping the existing hold-out scripts
-  baselines.py       noise ceiling, nearest-site and linear propagation baselines
-  run_study.py       runs a rung × tier × test grid and saves results
-  results/           outputs (not committed)
-tests/
-  test_recovery.py   R0 + S1 on a 10-node network must recover its parameters
+  README.md               this plan and the results so far
+  core/                   library code
+    paths.py              folder layout, logging, JSON saving; puts neurofe on the path
+    anatomy.py            PyTepFit SC, distances, leadfield, real TEPs; sub-networks; site masks
+    params.py             ground-truth draws, effective-value transforms, teacher/student JRParams, tiers S1–S3
+    simulator.py          batched JR simulator for the teacher (exact copy of JansenRit.forward)
+    student.py            build and fit the student; trial-averaged predictions
+    metrics.py            EEG fit by window, GMFA, noise ceiling, TEP features, parameter recovery
+    ladder.py             rung configurations (R0, R1 implemented; R2–R6 declared)
+  scripts/                runnable entry points (python -m syn_brain.scripts.<name>)
+    calibrate_teacher.py  compare synthetic TEPs with real TMS-EEG
+    recover_small.py      Phase 1 gate: 10-node R0 + S1 parameter recovery
+    make_teacher.py       generate synthetic subjects (8 sites each) for Phase 2
+  tests/                  pytest: simulator equivalence, recovery pipeline
+  data/                   generated teachers (not committed)
+  results/                JSON and figures per experiment (not committed)
+  logs/                   run logs (not committed)
 ```
 
-Metrics that are useful beyond this study (parameter recovery, restart spread, noise ceiling) go into `neurofe/metrics.py`. Once the study is done, reusable parts move into `neurofe/validation/` so other users can run the same tests on their own data.
+Still to build for Phase 2: test protocols T1–T4 (wrapping the existing hold-out scripts) and the nearest-site and linear propagation baselines. Once the study is done, reusable parts move into `neurofe/validation/` so other users can run the same tests on their own data.
 
 ## Compute
 

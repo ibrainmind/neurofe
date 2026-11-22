@@ -1,0 +1,7 @@
+# Generated data, results and logs stay out of git; regenerate with the scripts.
+data/*
+results/*
+logs/*
+!data/.gitkeep
+!results/.gitkeep
+!logs/.gitkeep
