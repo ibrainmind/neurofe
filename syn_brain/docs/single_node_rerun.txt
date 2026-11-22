@@ -87,6 +87,10 @@ From the repo root:
                                     markers, fitting methods)
   docs/background_drive_note.txt    open item: background drive and neurofe's
                                     Laplacian coupling
+  scripts/pd_connectivity_plan.py   builds reports/pd_connectivity_study_plan.pdf
+                                    (connections between JR nodes, early PD);
+                                    needs no results:
+                                      PYTHONPATH=. .venv/bin/python -m syn_brain.scripts.pd_connectivity_plan
 
   Superseded: scripts/single_node.py and scripts/single_node_figures.py are an
   earlier, unfinished version of this study (amplitude sweep only). Kept for

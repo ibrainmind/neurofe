@@ -4,7 +4,7 @@
 
 ## Single-node virtual-TMS study (2026-11-22)
 
-One teacher JR node (neurofe nominal values) identified by a student JR node through backpropagation, under 12 virtual-TMS conditions. Report: `reports/single_node_tms_study.pdf`; follow-up plan: `docs/single_node_study_plan.txt`; open item on background drive: `docs/background_drive_note.txt`. To re-run: `bash syn_brain/scripts/run_single_node_tms.sh` (details in `docs/single_node_rerun.txt`).
+One teacher JR node (neurofe nominal values) identified by a student JR node through backpropagation, under 12 virtual-TMS conditions. Report: `reports/single_node_tms_study.pdf`; follow-up plan: `docs/single_node_study_plan.txt`; open item on background drive: `docs/background_drive_note.txt`. To re-run: `bash syn_brain/scripts/run_single_node_tms.sh` (details in `docs/single_node_rerun.txt`). Follow-up plan on node connections and early Parkinson's disease detection: `reports/pd_connectivity_study_plan.pdf`.
 
 - At nominal values a node with no background input is almost a linear filter. Only k·A (P1 amplitude) and a (P1 latency) are well identified; the E–I loop (c1–c4, b) leaves a 0.6 µV trace.
 - A, B and vmax are exactly degenerate with the c's and k (two scaling symmetries), so they must stay fixed.
