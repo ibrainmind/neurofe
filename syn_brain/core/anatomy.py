@@ -72,7 +72,10 @@ def load_anatomy(n_nodes: int | None = None) -> Anatomy:
 def load_real_eeg() -> np.ndarray:
     """Real TMS-EEG evoked responses, (subjects, channels, 400) in the PyTepFit window."""
     import scipy.io
-    x = scipy.io.loadmat(PYTEPFIT_DATA / "only_high_trial.mat")["only_high_trial"]
+    f = PYTEPFIT_DATA / "only_high_trial.mat"
+    if not f.exists():
+        raise FileNotFoundError(f"{f} not found. Fetch it with: bash syn_brain/scripts/fetch_pytepfit_data.sh")
+    x = scipy.io.loadmat(f)["only_high_trial"]
     return x[:, :, WINDOW[0]:WINDOW[1]].astype(float)
 
 

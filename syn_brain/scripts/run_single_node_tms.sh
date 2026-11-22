@@ -11,7 +11,7 @@
 #   NPARTS   parallel training processes (default 4; one CPU core each)
 #   ITERS    Adam iterations per model (default 300, as in the report)
 #   STEP     all | analyse | train | report   (default all)
-#   SYN_BRAIN_PYTEPFIT_DATA  folder with PyTepFit's data (default ~/projects/PyTepFit/data)
+#   SYN_BRAIN_PYTEPFIT_DATA  folder with PyTepFit's data (default syn_brain/external/pytepfit, in git)
 #
 # Outputs: syn_brain/results/single_node_tms/ (data, figures), syn_brain/logs/ (logs),
 #          syn_brain/reports/single_node_tms_study.pdf

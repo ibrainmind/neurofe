@@ -15,10 +15,9 @@ DATA_DIR = SYN_ROOT / "data"
 RESULTS_DIR = SYN_ROOT / "results"
 LOGS_DIR = SYN_ROOT / "logs"
 
-# PyTepFit's bundled anatomy and TMS-EEG data. Override with SYN_BRAIN_PYTEPFIT_DATA.
-PYTEPFIT_DATA = Path(os.environ.get(
-    "SYN_BRAIN_PYTEPFIT_DATA",
-    str(Path.home() / "projects" / "PyTepFit" / "data")))
+# PyTepFit's anatomy (leadfield, connectome, distances) is vendored in external/pytepfit/; the large
+# real TMS-EEG file is fetched there by scripts/fetch_pytepfit_data.sh. Override with SYN_BRAIN_PYTEPFIT_DATA.
+PYTEPFIT_DATA = Path(os.environ.get("SYN_BRAIN_PYTEPFIT_DATA", str(SYN_ROOT / "external" / "pytepfit")))
 
 # Make `import neurofe` work when scripts are run from anywhere.
 if str(REPO_ROOT) not in sys.path:

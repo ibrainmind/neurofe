@@ -11,9 +11,11 @@
 #                                   TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu bash setup_venv.sh
 #   RECREATE=1                    delete and rebuild .venv from scratch
 #   SKIP_TESTS=1                  skip the quick pytest check at the end
+#   SKIP_FETCH=1                  do not fetch PyTepFit's real TMS-EEG file (11.5 MB)
 #
-# PyTepFit's data (anatomy, leadfield, real TMS-EEG) is not in this repo. syn_brain looks for it in
-# ~/projects/PyTepFit/data, or set SYN_BRAIN_PYTEPFIT_DATA=/path/to/PyTepFit/data.
+# PyTepFit's anatomy (leadfield, connectome, distances) is in git under syn_brain/external/pytepfit/.
+# The 11.5 MB real TMS-EEG file (only needed for calibrate_teacher.py) is fetched by this script into
+# the same folder; set SKIP_FETCH=1 to skip that.
 
 _sourced=0
 [[ "${BASH_SOURCE[0]}" != "$0" ]] && _sourced=1
@@ -86,13 +88,13 @@ print(f"      torch {torch.__version__} (CUDA available: {torch.cuda.is_availabl
 from syn_brain.core.paths import PYTEPFIT_DATA
 print(f"      PyTepFit data: {PYTEPFIT_DATA} -> {'found' if PYTEPFIT_DATA.exists() else 'MISSING (set SYN_BRAIN_PYTEPFIT_DATA)'}")
 EOF
+  if [[ "${SKIP_FETCH:-0}" != 1 && -z "${SYN_BRAIN_PYTEPFIT_DATA:-}" ]]; then
+    bash syn_brain/scripts/fetch_pytepfit_data.sh | sed 's/^/      /' ||
+      echo "      WARNING: could not fetch only_high_trial.mat (only calibrate_teacher.py needs it)"
+  fi
   if [[ "${SKIP_TESTS:-0}" != 1 ]]; then
-    if [[ -d "${SYN_BRAIN_PYTEPFIT_DATA:-$HOME/projects/PyTepFit/data}" ]]; then
-      echo "      running syn_brain tests (~1 min)"
-      PYTHONPATH="$repo" .venv/bin/python -m pytest syn_brain/tests -q || echo "      WARNING: tests failed (see above)"
-    else
-      echo "      skipping tests: PyTepFit data not found"
-    fi
+    echo "      running syn_brain tests (~1 min)"
+    PYTHONPATH="$repo" .venv/bin/python -m pytest syn_brain/tests -q || echo "      WARNING: tests failed (see above)"
   fi
 
   echo
