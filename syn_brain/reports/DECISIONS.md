@@ -82,3 +82,79 @@ problem first -- it is the cheap place to find out whether any method can honest
 work (fixing the missing late-TEP-activity finding) is a separate, parallel, lower-priority
 track that improves teacher realism, not identifiability -- flagged explicitly so the two
 aren't conflated in future planning.
+
+## 2026-11-22 — Mechanism behind the c1·c2/c3·c4 recovery failure (William asked "why", not just "that it fails")
+
+Investigated directly rather than leaving it at "sloppy/multi-modal". Found three distinct,
+compounding causes:
+
+1. **Protocol design flaw (fixable):** a single fixed p=150 does not put every teacher in the
+   same dynamical regime. Direct state-space check (6s settle + 1s stability window, bypassing
+   `simulate()`'s baseline correction which masked this earlier): nominal/T0/T1 land in a clean,
+   non-oscillating active state at p=150 (spread <0.001 mV over 1s); T2 and T3 sustain large
+   oscillations there (spread 1.5-7.6 mV) -- a direct violation of the study plan's own risk
+   criterion ("no sustained oscillation"), undetected until now because the per-teacher E12 run
+   didn't check it. T3 has a stable active window at p=240 instead (spread 0.003 mV) -- fixable
+   by per-teacher calibration.
+2. **A structural dynamical limit for some parameter draws (not fixable by choice of p):** T2
+   has NO tonic drive level that is both "engaged" (sigmoid slope > 0.6) and non-oscillating --
+   scanning p=70-95 in small steps shows the quiet state (slope 0.14-0.21) jumps straight into a
+   ~4-5 mV sustained oscillation (slope 0.68) with no intervening stable active window. For this
+   draw, the model cannot be brought to a state where the loop is both engaged and measurable
+   without inducing abnormal rhythmic activity -- a genuine property of that parameter set, not
+   a fitting failure. Plausibly relevant to real E/I-balance biology: parameter shifts that
+   reduce inhibition are exactly the kind that could abolish a quiet engaged state this way.
+3. **Genuine nonlinear cross-coupling between the loops (not fixable by operating point alone):**
+   Fisher eigenvectors at p=150 (nominal) show the two softest directions (10,000x and 500x
+   below the stiffest) are dominated by a mixed (c1, c2, c4) combination, not a clean c1·c2
+   pair -- c3 loads only weakly on them. The excitatory and inhibitory loops share the pyramidal
+   population and become cross-coupled once genuinely nonlinear (sigmoid-engaged), which the
+   linear small-signal theory (section 2 of the study plan) does not capture. This likely
+   explains why c3·c4 cleans up with a good operating point but c1·c2 does not, even for
+   dynamically well-behaved teachers (T0 at p=150, dynamically stable, still gets c1·c2=53%).
+
+Decision: not rerunning full E9-style training with per-teacher calibrated p this session (T3
+only; T2 should be flagged as excluded/pathological, not "fixed") -- the stability-screening
+result is already conclusive and cheap to obtain; a full backprop confirmation is the natural
+next step if this becomes a priority, but the mechanism is established either way. Recommended
+next experiment instead: richer stimuli (paired-pulse, train, E+I injection) AT the firing
+state, to test whether they resolve the (c1,c2,c4) entanglement the way they tightened bounds
+at rest in the original study.
+
+## 2026-11-22 — E/I-balance bifurcation map (major effort, per William/Zheng's request)
+
+Built a full phase diagram: tonic drive p (0-280) x an E/I-balance multiplier m (c1,c2 *=
+sqrt(m), c3,c4 /= sqrt(m); m=1 nominal). Vectorized batch simulation made the whole 15x19 grid
+cheap (~20s per classification pass), so this was done properly rather than at a few spot
+points. Full report: `reports/ei_balance_bifurcation_map.pdf`.
+
+Key findings:
+- Clean, monotonic quiet-to-active boundary that bends with E/I balance (E-dominant needs less
+  drive to engage) -- model behaves sensibly.
+- First-pass regime classification (settle 6s + one 1s window) WRONGLY flagged part of the
+  quiet-to-active transition as a limit cycle. Caught by comparing two time-separated windows:
+  a genuine limit cycle plateaus; what was flagged was a slowly-damping spiral (critical
+  slowing down, again) that fully settles by ~10-15s. Corrected before trusting the diagram.
+  Also found: a sustained-oscillation island only exists in ONE place (balanced-to-slightly-
+  I-leaning, m 0.5-1.5, high drive p>210ish) -- the earlier T2/T3 oscillation (full independent
+  parameter draws, not this clean m-axis) is NOT reproduced by this 2D slice, meaning other
+  parameter directions reach instability that this axis doesn't show.
+- Hysteresis test (does reducing drive escape a confirmed, plateaued limit cycle): tested on
+  the nominal/balanced case and on the independently-fragile T2 teacher. Neither showed
+  hysteresis -- ramping drive down exits the oscillation and lands on exactly the same quiet
+  state a cold start reaches at that drive level (matched to ~3 decimal places). No bistability
+  via drive alone found, for the two cases tested (explicitly flagged as not exhaustive).
+- CRB by region: SP1000 alone is catastrophic for E-dominant ("too much E") states (median
+  >2500% on both loop gains) -- a single pulse is nearly uninformative there. RICH (paired-
+  pulse + train + E/I injection) restores good bounds everywhere (median 10-19%).
+- Backprop confirmation (10 starts, 3 representative points, not just CRB): RICH genuinely
+  helps (beats SP1000 in 5/6 comparisons). c3·c4 passes the 20% gate with RICH at balanced and
+  I-dominant points; misses narrowly at E-dominant (20.5%). **c1·c2 remains hard everywhere even
+  with RICH, worst in the E-dominant state (39.8%)** -- the one persistent, now well-
+  characterized limit, consistent with the (c1,c2,c4) Fisher entanglement found earlier.
+
+Decision: this is now a solid enough answer to report back rather than keep iterating further
+this session -- the remaining open item (c1·c2 in E-dominant states) is specific and actionable
+(more stimulus diversity, or an uncertainty-aware method) rather than vague. Standalone
+analysis scripts, not yet folded into single_node_tms.py/build_jobs() as permanent experiments
+-- worth doing if this becomes a recurring part of the study rather than a one-off investigation.

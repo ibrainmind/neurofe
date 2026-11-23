@@ -6,6 +6,10 @@
 
 **Are the parameters identifiable and do fits generalize? No, not reliably — only k (stimulus gain) and a (excitatory rate) are.** The E-I loop gains (c1·c2, c3·c4) are unidentifiable at rest, only sometimes recoverable at the firing state (p≥150, and not robustly across different ground-truth teachers), and fits don't generalize to held-out time windows or stimulus amplitudes at either operating point. Full writeup: `reports/single_node_conclusions.pdf`. **Recommendation: don't move to network-scale work for the loop-gain parameters yet** — test an uncertainty-aware fitting method (study plan Part C) on this same single-node problem first. Decision log: `reports/DECISIONS.md`.
 
+## E/I-balance bifurcation map (2026-11-22)
+
+Mapped the full phase diagram (tonic drive x E/I balance): a clean, monotonic quiet-to-active boundary that bends with balance; one genuine sustained-oscillation band (balanced-ish, high drive); no hysteresis found in the two cases tested (reducing drive cleanly exits the oscillation). A single pulse is nearly uninformative for "too much E" states (CRB >2500%); a richer protocol (paired-pulse+train+E/I injection) restores good bounds almost everywhere, confirmed by real backprop recovery — except c1·c2 in E-dominant states, which stays hard even with the richer protocol. Full report: `reports/ei_balance_bifurcation_map.pdf`.
+
 ## Single-node virtual-TMS study (2026-11-22)
 
 One teacher JR node (neurofe nominal values) identified by a student JR node through backpropagation, under 12 virtual-TMS conditions. Report: `reports/single_node_tms_study.pdf`; follow-up plan: `docs/single_node_study_plan.txt`; open item on background drive: `docs/background_drive_note.txt`. To re-run: `bash syn_brain/scripts/run_single_node_tms.sh` (details in `docs/single_node_rerun.txt`). Follow-up plan on node connections and early Parkinson's disease detection: `reports/pd_connectivity_study_plan.pdf`.
