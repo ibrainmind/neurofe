@@ -158,3 +158,22 @@ this session -- the remaining open item (c1·c2 in E-dominant states) is specifi
 (more stimulus diversity, or an uncertainty-aware method) rather than vague. Standalone
 analysis scripts, not yet folded into single_node_tms.py/build_jobs() as permanent experiments
 -- worth doing if this becomes a recurring part of the study rather than a one-off investigation.
+
+## 2026-11-22 — Validated (not assumed) that parameter accuracy predicts generalization
+
+William asked for direct empirical validation of "if the student learned the teacher's
+parameters, it should generalize" rather than taking it as a logical given (it is only exactly
+true for perfect recovery; with partial recovery and known sloppy/gauge directions it's an
+empirical question). Correlated per-model parameter-recovery error against per-model
+generalization error, reusing already-saved E9/E11/E12 fits -- no new training needed.
+Added as section 4 of `reports/single_node_conclusions.pdf`.
+
+Result: clean confirmation, with the right structure. Error in the theoretically-identifiable
+quantities (a rho=0.78, c3·c4 rho=0.71, c4 rho=0.57, b rho=0.65, k rho=0.47, c2/c1·c2 rho=0.51,
+all p<0.03) correlates significantly with both temporal-hold-out and held-out-amplitude
+generalization error. Error in individual c1 does NOT (rho=-0.14, p=0.55) -- exactly as the
+linear theory predicts (c1 only enters the EEG as the product c1·c2, so its individual error
+should be noise, not signal, with respect to prediction). This independently corroborates the
+structural identifiability analysis using real generalization behavior, not just Fisher theory.
+Practical takeaway folded into the report: screen fitted models by error in identifiable
+combinations (b, c1·c2, c3·c4) and stiff parameters (a, k), not by raw overall parameter error.

@@ -99,8 +99,39 @@ def content():
               "checking it holds across a range of ground truths first — exactly what T2 shows can fail.", BODY))
     s.append(PageBreak())
 
+    s.append(P("4. Does parameter accuracy actually CAUSE generalization — checked, not assumed", H1))
+    s.append(P("\"A student that learned the teacher's parameters should generalize\" sounds like a direct "
+              "consequence of the model being deterministic — but that only holds for EXACT recovery. With "
+              "partial recovery, and in the presence of the sloppy/gauge directions this study keeps finding "
+              "(individual c1, c2, c3, c4 don't matter on their own; only their products do), it is not "
+              "obvious that \"more accurate parameters\" and \"better generalization\" track each other in "
+              "practice. Checked directly: for every already-fitted model in E9/E11/E12, correlated its "
+              "OWN parameter-recovery error against its OWN generalization error (Spearman rank "
+              "correlation, since the relationship need not be linear).", BODY))
+    s.append(fig(BIF_OUT / "fig_generalization_correlation.png",
+                "Figure 3. Top row (temporal hold-out, n=20 models): parameter error vs late-window "
+                "prediction error for the same model. Bottom row (held-out stimulus amplitude, n=30 models "
+                "across 5 teachers): parameter error vs prediction error on an amplitude never trained on."))
+    s.append(P("The answer is yes, specifically for the quantities the theory says should matter: b "
+              "(&rho;=0.65), c1&middot;c2 (&rho;=0.51) and c3&middot;c4 (&rho;=0.71, held-out-amplitude test) "
+              "all correlate significantly with generalization failure. a (&rho;=0.78) and k (&rho;=0.47), "
+              "the two stiff parameters, correlate strongly too. <b>Individual c1 does not</b> "
+              "(&rho;=-0.14, not significant) — exactly as predicted by the linear theory (section 2 of the "
+              "study plan), which says c1 only enters the EEG as the product c1&middot;c2, so its individual "
+              "recovery error should be noise with respect to prediction, not signal. This is a clean, "
+              "independent confirmation that the structural identifiability analysis is not just "
+              "theoretically motivated but actually explains which recovery errors matter for real "
+              "generalization behaviour.", BODY))
+    s.append(P("Practical implication: don't screen fitted models by overall parameter error (it mixes "
+              "signal and noise); screen by error in the identifiable combinations (b, c1&middot;c2, "
+              "c3&middot;c4) and the stiff parameters (a, k) — those are the ones that predict whether a fit "
+              "will actually generalize.", BOX))
+
     s.append(P("How this conclusion could be wrong", H1))
     s.extend(bullets([
+        "<b>The correlation check (section 4) uses n=20-30 models.</b> Spearman p-values around 0.01-0.02 "
+        "(c2, c1&middot;c2, k) are real but not overwhelming at this sample size; the clearly strong results "
+        "(a, c3&middot;c4, c4: p&lt;0.002) and the clearly null result (c1: p=0.55) are the ones to lean on.",
         "<b>Small samples.</b> E9/E12 use 10 and 5 starts respectively, and 4 perturbed teachers. The "
         "qualitative pattern (loop gains sloppy/non-robust, generalization poor) is consistent with the "
         "much larger original E1-E8 study (402 models) at rest, which is reassuring, but the firing-state "
