@@ -2,6 +2,10 @@
 
 **Status:** Phase 1 (build and calibrate) code is in place; the Phase 1 gate **did not pass**. See [Phase 1 results](#phase-1-results-2026-11-21) before starting Phase 2.
 
+## Single-node study: final conclusion (2026-11-22)
+
+**Are the parameters identifiable and do fits generalize? No, not reliably — only k (stimulus gain) and a (excitatory rate) are.** The E-I loop gains (c1·c2, c3·c4) are unidentifiable at rest, only sometimes recoverable at the firing state (p≥150, and not robustly across different ground-truth teachers), and fits don't generalize to held-out time windows or stimulus amplitudes at either operating point. Full writeup: `reports/single_node_conclusions.pdf`. **Recommendation: don't move to network-scale work for the loop-gain parameters yet** — test an uncertainty-aware fitting method (study plan Part C) on this same single-node problem first. Decision log: `reports/DECISIONS.md`.
+
 ## Single-node virtual-TMS study (2026-11-22)
 
 One teacher JR node (neurofe nominal values) identified by a student JR node through backpropagation, under 12 virtual-TMS conditions. Report: `reports/single_node_tms_study.pdf`; follow-up plan: `docs/single_node_study_plan.txt`; open item on background drive: `docs/background_drive_note.txt`. To re-run: `bash syn_brain/scripts/run_single_node_tms.sh` (details in `docs/single_node_rerun.txt`). Follow-up plan on node connections and early Parkinson's disease detection: `reports/pd_connectivity_study_plan.pdf`.

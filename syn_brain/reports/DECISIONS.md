@@ -63,3 +63,22 @@ simulation-based inference, C7 HMC/NUTS) rather than further Adam/optimizer engi
 pursued further this session, to respect the compute-budget standing rule and because the
 practical question (what operating point to use) is already answered. Full writeup:
 `reports/bifurcation_followup.pdf`.
+
+## 2026-11-22 — Closing the single-node study with an explicit identifiability+generalization verdict before any network-phase work
+
+William flagged (correctly) that the firing-state investigation never answered the parent
+study's actual questions: are parameters identified, and do fits generalize? Added two more
+experiments (E11: temporal hold-out at p=150, mirrors E8; E12: 4 perturbed teachers at p=150,
+mirrors E6) plus a free re-analysis of existing E9 fits for cross-amplitude generalization.
+Combined with the original rest-state study (E1-E8), wrote a single final verdict:
+`reports/single_node_conclusions.pdf`. Headline: k and a are identifiable everywhere;
+c3·c4 is identifiable only at p>=150 and only inconsistently (7-28% across 4 perturbed
+teachers, one teacher's c1·c2 fails at 91-95%); generalization (temporal hold-out, held-out
+amplitude) fails at BOTH operating points, worse in absolute terms at p=150 than at rest for
+the late window. **Decision: do not proceed to network-scale work (Phase 2) for the loop-gain
+parameters.** Recommend testing an uncertainty-aware method (Part C) on this same single-node
+problem first -- it is the cheap place to find out whether any method can honestly report
+"not identified" instead of a confident wrong point estimate. Network-level background-drive
+work (fixing the missing late-TEP-activity finding) is a separate, parallel, lower-priority
+track that improves teacher realism, not identifiability -- flagged explicitly so the two
+aren't conflated in future planning.

@@ -23,6 +23,8 @@ Sub-commands
                   p=150 (stable active state), noise-free
               E10 firing-state recovery at p=120/150, sensor noise 0.42 uV (pass
                   criteria of docs/single_node_study_plan.txt Part A)
+              E11 temporal hold-out at p=150 (mirrors E8, firing state)
+              E12 4 perturbed teachers at p=150 (mirrors E6, firing state)
             Split across processes with --part/--nparts.
 
 Usage (repo root):
@@ -300,6 +302,20 @@ def build_jobs(n_starts: int, rng):
         for s in range(n_starts):
             jobs.append(dict(exp="E9", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log", noise=0.0))
             jobs.append(dict(exp="E10", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log", noise=SIGMA))
+    # E11: temporal hold-out AT p=150 -- mirrors E8, but at the chosen firing-state operating
+    # point, to check whether recovering the loop gains there (E9) also means the fit
+    # generalizes to a held-out late window, not just the training window.
+    for p in ("SP1000@p150", "DOSE@p150"):
+        for s in range(n_starts):
+            jobs.append(dict(exp="E11", teacher="nominal", protocol=p, start=s, z0=st7[s], free="7", param="log",
+                             noise=0.0, window="early"))
+    # E12: perturbed teachers AT p=150 -- mirrors E6, to check whether E9's recovery numbers
+    # are specific to the nominal parameter point or hold generally.
+    for tname in ("T0", "T1", "T2", "T3"):
+        for p in ("SP1000@p150", "DOSE@p150"):
+            for s in range(n_starts // 2):
+                z0 = st7[s] - np.log(teachers[tname][:len(FIT)] / NOM_FIT)
+                jobs.append(dict(exp="E12", teacher=tname, protocol=p, start=s, z0=z0, free="7", param="log", noise=0.0))
     for j in jobs:
         j.setdefault("pin", -1); j.setdefault("pin_z", 0.0); j.setdefault("window", "full")
     return jobs, teachers

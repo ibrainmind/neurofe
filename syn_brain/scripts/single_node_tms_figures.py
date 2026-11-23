@@ -226,7 +226,7 @@ def main():
     prog = 1 - np.abs(err) / np.maximum(np.abs(err0), 1e-9)
     summary["start_median_abs_err_pct"] = dict(zip(FIT, (100 * np.median(np.abs(err0[sel(d, exp="E1")][:, :len(FIT)]), 0)).round(1).tolist()))
     summary["progress_median"] = {}
-    for exp in ("E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10"):
+    for exp in ("E1", "E2", "E3", "E4", "E6", "E7", "E8", "E9", "E10", "E11", "E12"):
         mm = sel(d, exp=exp)
         if mm.any():
             npar = len(ALL) if exp == "E3" else len(FIT)
