@@ -242,6 +242,40 @@ p = 105) vs 0.106 balanced and 0.300 I-dominant -- the excitatory loop is satura
 explains why c1*c2 is unidentifiable there regardless of stimulus. No thresholds changed; no new
 fits run.
 
+## 2026-11-24 — Corrected ei_balance_bifurcation_map.pdf to match the equation-level analysis above
+
+Re-derived the whole phase diagram using `jr_parameters_explainer.equilibria()` (exact fixed
+points + eigenvalues, immune to integration-step error) in place of the original Euler-simulation
+classification, on the same (p, m) grid. Rebuilt Figure 1 and rewrote the Verdicts and section 3
+("Is the limit cycle a trap?") to match.
+
+Confirmed on the full 285-point grid: of the 20 points the old method called "limit cycle", 17
+are genuinely confirmed (no stable fixed point exists at all) and only 2 (both at m~1, p=255-270
+-- exactly the point used for the original hysteresis test) are the Euler-step artifact. The
+bigger correction is a 27-point **bistable (fold) region** the simulation-only method could never
+see (a cold start always lands on the quiet branch even where a stable active branch also
+coexists) -- this was previously silently folded into "quiet". The corrected "active, stable"
+region is larger (134 vs ~80 points), especially for E-dominant m (45->99 points), which makes
+the single-pulse-vs-RICH identifiability gap even more extreme than first reported (E-dominant
+SP1000 CRB median now ~265,000% / ~29,700%, not ~2,800% / ~3,300% -- the earlier number
+under-sampled the true active region).
+
+The three backprop-validation points (balanced p=150, E-dominant p=105, I-dominant p=240) were
+individually re-checked with `equilibria()` and are all genuinely stable, undamped active
+states -- no correction needed to Table 1 or to the recommendation in
+`single_node_conclusions.pdf` section 6 (Laplace calibration, also run at p=150).
+
+**Withdrawn finding:** section 3's original "no hysteresis" result (ramping down from m=1,
+p=270) tested a point now known to be numerically stable in the true equations -- there was no
+real limit cycle there to escape from. **Replacement finding (real, confirmed):** genuine
+hysteresis exists at the quiet/active fold itself (p in [36.5, 114.6) for the balanced case,
+bistable from p=0 for E-dominant columns) -- a different mechanism than the one originally
+tested, and not previously known to this study.
+
+Not pursued further this session: extending `equilibria()` to arbitrary (not just m-axis)
+parameter draws, so the T2/T3-style independently-perturbed teachers (whose oscillation was only
+checked by long simulation, not analytically) can be placed on the same exact map.
+
 ## 2026-11-24 — Built and validated a Laplace posterior across 24 random teachers (closes the posterior-method gap)
 
 Used Workflow (William opted in) to run 4 parallel batches of 6 teachers each (24 total,

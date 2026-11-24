@@ -1,6 +1,13 @@
 """E/I-balance bifurcation map report: identifiability of the excitatory/inhibitory loop
 around the limit cycle, across quiet / E-dominant / balanced / I-dominant active states.
 
+Corrected 2026-11-24: the regime classification now uses the analytic fixed-point +
+eigenvalue method from jr_parameters_explainer.py (equilibria()) instead of Euler-simulation,
+after that independent analysis found (a) a bistable/hysteresis fold region the simulation-only
+approach couldn't see (cold starts always land on the quiet branch), and (b) that the specific
+point used for the original hysteresis test (balanced, p=270) was a numerical artifact of
+neurofe's 0.1 ms Euler step, not a real limit cycle.
+
     PYTHONPATH=. .venv/bin/python -m syn_brain.scripts.ei_balance_report
 Output: syn_brain/reports/ei_balance_bifurcation_map.pdf
 """
@@ -21,7 +28,7 @@ OUT = SYN_ROOT / "results" / "bifurcation_followup"
 
 def region_table(raw, crb):
     regime = raw["regime"]; m = raw["m"]
-    active = regime == 1
+    active = regime == 2   # CORRECTED scheme: 0=quiet,1=bistable,2=active-stable,3=Euler-artifact,4=genuine oscillation
     mgrid = np.broadcast_to(m[None, :], regime.shape)
     regions = {
         "balanced (0.77&lt;m&lt;1.3)": active & (np.abs(np.log(mgrid)) < np.log(1.3)),
@@ -47,59 +54,89 @@ def content():
     s = []
     s.append(P("The E/I-balance bifurcation map", TITLE))
     s.append(P("syn_brain single-node study -- identifiability around quiet / active / limit-cycle states, "
-              "and across E-dominant, balanced, and I-dominant operating points", CAP))
+              "and across E-dominant, balanced, and I-dominant operating points. <b>Corrected 2026-11-24</b> "
+              "to match the analytic equation-level analysis in "
+              "<font face='DVM'>reports/jr_parameters_explainer.pdf</font> -- see the correction note below.",
+              CAP))
     s.append(Spacer(1, 6))
+
+    s.append(P("Correction note (2026-11-24)", H2))
+    s.append(P("The original version of this report classified each grid point's dynamical regime by "
+              "simulating it (neurofe's Euler integrator, 0.1 ms step) and checking whether the response "
+              "kept oscillating. An independent equation-level analysis "
+              "(<font face='DVM'>jr_parameters_explainer.pdf</font>: exact fixed points, solved analytically, "
+              "classified by the eigenvalues of the linearised equations -- immune to integration-step error "
+              "by construction) found two things the simulation-based map got wrong, both now fixed here: "
+              "(1) an entire <b>bistable (fold) region</b> was invisible to a cold-start-only simulation -- "
+              "every cold start lands on the quiet branch even where a stable active branch also exists, so "
+              "that whole region was silently mislabelled \"quiet\"; (2) the specific point used for the "
+              "hysteresis test in section 3 (balanced, p=270) is a <b>numerical artifact</b> -- the true "
+              "equations are stable there (just very weakly damped), but neurofe's Euler step adds enough "
+              "spurious energy to make the simulation ring forever. Re-derived the whole phase diagram "
+              "(Figure 1) and the \"is it a trap\" section (3) from the analytic method; the CRB/backprop "
+              "findings (section 2) did not need correction -- all three validation points were independently "
+              "re-checked and are genuinely stable, undamped active states.", BOX))
 
     s.append(P("Verdicts", H1))
     s.append(P("<b>Is there a clean, normal transition between quiet and active, and does it bend with "
-              "E/I balance?</b> &rarr; Yes. Sweeping tonic drive p against an E/I-balance multiplier m "
-              "(c1,c2 scaled by &radic;m; c3,c4 by 1/&radic;m; m=1 is nominal/balanced) gives a smooth, "
-              "monotonic quiet-to-active boundary: E-dominant states (m&gt;1) need less drive to engage, "
-              "I-dominant states need more. This matches the obvious biological intuition and is a useful "
-              "sanity check that the model is behaving sensibly.", VERDICT_OK))
-    s.append(P("<b>Where do pathological (sustained-oscillation) states live?</b> &rarr; In one genuine band: "
-              "roughly balanced-to-slightly-I-leaning (m 0.5-1.5) at high drive (p above ~210-270, depending "
-              "on m). An apparent second oscillating island at strongly E-dominant, low drive was CHECKED "
-              "AND REJECTED: it was a slowly-damping spiral (critical slowing down), not a true limit cycle "
-              "-- caught only by comparing two time-separated measurement windows, not one.", VERDICT_OK))
-    s.append(P("<b>Can the system get 'stuck' in the limit cycle (hysteresis)?</b> &rarr; Not found, in the "
-              "two cases directly tested. Ramping tonic drive back down from inside a confirmed, plateaued "
-              "limit cycle (both for the balanced/nominal case and for an independently-drawn, intrinsically "
-              "fragile teacher) exits the oscillation cleanly, landing on exactly the same quiet fixed point "
-              "a cold start reaches at that same drive level. No bistability via drive alone, in this model, "
-              "for these two cases.", VERDICT_OK))
+              "E/I balance?</b> &rarr; Yes, with one addition: it is not a single line but a <b>band</b> -- "
+              "over a range of p the quiet and active states coexist (a fold), and which one the node is in "
+              "depends on its history. E-dominant states (m&gt;1) need less drive to engage and the fold "
+              "sits lower; I-dominant states need more.", VERDICT_OK))
+    s.append(P("<b>Where do pathological (sustained-oscillation) states live?</b> &rarr; <b>Revised.</b> A "
+              "narrower, lower genuine band than first reported: confirmed analytically (no stable state "
+              "exists at all) mainly for balanced-to-I-leaning m at moderate-high p. The part of the original "
+              "band at m&asymp;1 and high p (p&gt;250) is <b>not</b> a real limit cycle -- it is neurofe's "
+              "Euler step turning a very weakly damped (but genuinely stable) ringing into an apparently "
+              "sustained one. This matters: it was exactly the point used below for the hysteresis test.",
+              VERDICT_BAD))
+    s.append(P("<b>Can the system get 'stuck' (hysteresis)?</b> &rarr; <b>Yes -- revised from \"not found\".</b> "
+              "The original test ramped down from what turned out to be the Euler artifact above, so it "
+              "never actually tested a real sustained oscillation, and it never crossed the fold region "
+              "either. The equation-level analysis found genuine hysteresis exactly at the quiet/active fold: "
+              "for the balanced case the two states coexist for p in [36.5, 114.6), confirmed by direct "
+              "simulation (settle active at p=150, step down: stays active at p=110/80/50 while a cold start "
+              "at those same p is quiet). E-dominant columns are bistable already from p=0.", VERDICT_BAD))
     s.append(P("<b>Does richer stimulation fix identifiability around this whole map, not just one point?</b> "
-              "&rarr; <b>Mostly yes, with one persistent exception.</b> A single pulse (SP1000) is "
-              "catastrophically uninformative for E-dominant states (CRB median &gt;2500%). A richer protocol "
-              "(paired-pulse + train + E/I-targeted injection, 'RICH') restores good bounds almost everywhere "
-              "(median 10-19%). Backprop CONFIRMS this is real, not just theoretical, for c3&middot;c4 and for "
-              "balanced/I-dominant c1&middot;c2 -- but <b>c1&middot;c2 in E-dominant states remains hard even "
-              "with RICH</b> (39.8% backprop vs a 19% CRB bound: the optimizer still underperforms the theory "
-              "there).", VERDICT_BAD))
+              "&rarr; <b>Mostly yes, with one persistent exception -- and the corrected map makes the case "
+              "stronger, not weaker.</b> With the fold-hidden active region now correctly included, the "
+              "E-dominant active-stable sample is much larger (45 to 99 of 285 grid points) and the single-"
+              "pulse failure is even more extreme (CRB median in the hundreds of thousands of percent -- "
+              "effectively zero information). A richer protocol ('RICH': paired-pulse + train + E/I-targeted "
+              "injection) still restores good bounds almost everywhere (median 10-24%). Backprop CONFIRMS "
+              "this is real for c3&middot;c4 and for balanced/I-dominant c1&middot;c2 -- but <b>c1&middot;c2 "
+              "in E-dominant states remains hard even with RICH</b> (39.8% backprop vs a 19-24% CRB bound).",
+              VERDICT_BAD))
 
     s.append(P("What this means for an E/I-balance biomarker", H2))
     s.append(P("The states that would matter most clinically -- 'too much E' -- are exactly the states "
-              "where a conventional single-pulse TMS-EEG protocol is least informative, by a huge margin "
-              "(1000s of percent CRB vs tens of percent for balanced/I-dominant states). A richer protocol "
-              "closes most of this gap. The one piece that remains stubbornly hard is the excitatory loop "
-              "gain (c1&middot;c2) specifically when excitation already dominates -- worth flagging explicitly "
-              "to William/Zheng as a known, tested limit rather than an untested assumption.", BODY))
+              "where a conventional single-pulse TMS-EEG protocol carries essentially no information at all "
+              "about the loop gains. A richer protocol closes most of this gap. The one piece that remains "
+              "stubbornly hard is the excitatory loop gain (c1&middot;c2) specifically when excitation "
+              "already dominates -- worth flagging explicitly to William/Zheng as a known, tested limit "
+              "rather than an untested assumption. Separately: a real patient could be sitting in the newly-"
+              "found bistable band, where the SAME background drive gives a quiet or an active response "
+              "depending on recent history -- a confound for any protocol that assumes a single, repeatable "
+              "operating point per subject.", BODY))
     s.append(PageBreak())
 
     s.append(P("1. The phase diagram", H1))
-    s.append(P("Grid: tonic drive p = 0-280 (step 15), E/I balance m = 1/3 to 3 (15 log-spaced values). For "
-              "each point, the raw (undemeaned) integrator state is read directly -- not through "
-              "simulate()'s baseline-corrected output, which hides the absolute operating point -- after an "
-              "8s settle, then classified using TWO successive 3s windows: a genuine limit cycle plateaus "
-              "(window 2 amplitude close to window 1); a damped spiral decays a lot between them. This "
-              "correction mattered: the first-pass single-window check wrongly flagged part of the quiet-to-"
-              "active transition as oscillatory.", BODY))
+    s.append(P("Grid: tonic drive p = 0-280 (step 15), E/I balance m = 1/3 to 3 (15 log-spaced values; "
+              "c1,c2 scaled by &radic;m, c3,c4 by 1/&radic;m, m=1 nominal/balanced). Each point is now "
+              "classified by solving for every fixed point of the continuous equations exactly (root-finding "
+              "on a fine grid) and checking the sign of the leading eigenvalue of the linearised dynamics at "
+              "each one (<font face='DVM'>jr_parameters_explainer.py: equilibria()</font>) -- this cannot be "
+              "fooled by the integration step, unlike the simulate-and-watch approach used in the first "
+              "version of this report (see correction note above).", BODY))
     s.append(fig(OUT / "fig_phase_diagram_full.png",
-                "Figure 1. Top row: dynamical regime, E/I dominance (raw E/(E+I), active points only), and "
-                "limit-cycle amplitude. Bottom row: CRB on c1·c2 under a single pulse vs the RICH protocol "
-                "(log color scale, same range both panels -- SP1000 is almost uniformly at the dark/bad end), "
-                "and the median CRB trend across all active m for both loop-gain combinations. Stars mark the "
-                "three points used for the backprop validation in section 2."))
+                "Figure 1. Top-left: corrected regime map -- quiet, bistable (fold, new), active-stable, "
+                "active but only oscillating because of neurofe's Euler step (artifact, now isolated to a "
+                "thin sliver near m=1, p>250), and genuine sustained oscillation. Top-middle: E/I dominance, "
+                "active-stable points only. Top-right: the Euler integrator's damping bias (always positive -- "
+                "it only ever pushes toward instability, never away from it). Bottom row: CRB on c1·c2, "
+                "single pulse vs RICH, and the median trend for both loop-gain combinations across the "
+                "(now larger and correct) active-stable region. Stars mark the three backprop validation "
+                "points from section 2, independently re-confirmed as genuinely stable."))
 
     s.append(P("2. Backprop validation: does the richer protocol actually work?", H1))
     s.append(P("CRB is a local, best-case bound -- this whole study has repeatedly found the optimizer can "
@@ -126,24 +163,36 @@ def content():
               "outlier: SP1000 is off the scale (1000s of percent); RICH brings it back in line with the "
               "other regions.", CAP))
 
-    s.append(P("3. Is the limit cycle a trap?", H1))
-    s.append(P("Tested directly rather than assumed. Case 1 (balanced/nominal, m=1): built up a confirmed, "
-              "plateaued limit cycle at p=270 (amplitude 1.2 mV, stable over 15s), then stepped drive down "
-              "through 240/210/180/150/100. The oscillation decayed smoothly and was fully gone by p=180, "
-              "landing at E-I=6.486 mV, 6.280 mV at p=150 -- matching a cold start at p=150 (6.280 mV) to 4 "
-              "decimal places. Case 2 (an independently-perturbed, intrinsically fragile teacher that "
-              "oscillates even at modest drive): built up its limit cycle at p=150 (amplitude 6.1 mV), "
-              "stepped down through 100 (still oscillating, 5.1 mV) to 60 -- oscillation vanished completely "
-              "(E-I=0.257 mV), again matching a cold start at p=60 exactly. Neither case shows hysteresis: "
-              "the backward (ramp-down) transition lands at essentially the same drive level as the forward "
-              "one found by scanning from a cold start. <b>No evidence that reducing drive alone fails to "
-              "resolve the abnormal oscillation</b>, for either case tested.", BODY))
+    s.append(P("3. Is the limit cycle a trap? -- corrected", H1))
+    s.append(P("<b>The original test in this section used the wrong point.</b> It built up what looked like a "
+              "confirmed, plateaued limit cycle at (balanced, p=270) and showed that ramping drive down exits "
+              "it cleanly. We now know that point is the Euler-step artifact described above: the true "
+              "equations are stable there (damping Re(&lambda;) = -0.096 /s, barely negative), so there was no "
+              "real limit cycle to escape from in the first place. That specific finding (\"no hysteresis\") "
+              "is therefore withdrawn -- it was a true statement about the simulator's behaviour at that "
+              "point, not a true statement about the model's dynamics.", VERDICT_BAD))
+    s.append(P("<b>The real answer, from the equation-level analysis:</b> hysteresis is real, at the "
+              "quiet/active fold, not at a limit-cycle boundary. For the balanced column (m=1) the quiet and "
+              "active states coexist for p in [36.5, 114.6). Direct simulation confirms it: settle into the "
+              "active state at p=150, then step the drive down -- the column STAYS active at p=110, 80 and 50 "
+              "(E-I = 5.98, 5.70, 5.33 mV) where a cold start at those same drive levels is quiet (2.09, 0.79, "
+              "-0.23 mV), and only drops to quiet between p=50 and p=40. E-dominant columns are bistable "
+              "already at p=0 -- there is no drive level at which an E-dominant column is forced to be quiet.",
+              BODY))
+    s.append(P("The second case tested in the original version (an independently-perturbed, intrinsically "
+              "fragile teacher, 'T2', that oscillates even at modest drive and was confirmed by a 30-second "
+              "simulation to have a genuinely non-decaying ~6 mV oscillation) was NOT part of the clean "
+              "(p, m) sweep and has not been independently re-verified by the analytic method -- its earlier "
+              "\"exits cleanly, no hysteresis\" finding is left as-is but should be read as unconfirmed by "
+              "this stronger method, not as contradicting the fold-hysteresis result above (they concern "
+              "different mechanisms: T2's is plausibly a genuine Hopf limit cycle; the fold is a separate, "
+              "coexisting-fixed-points phenomenon).", BODY))
     s.extend(bullets([
-        "Caveat: only two points in parameter space were tested for hysteresis, both varying along the "
-        "balance (m) axis or an independent full-parameter draw -- not an exhaustive search. A different "
-        "route through parameter space (e.g. varying a, b, or v0 instead of the loop gains) could behave "
-        "differently; this is evidence against a simple story, not a proof that no path to hysteresis "
-        "exists.",
+        "Practical implication: a real subject could sit in the bistable band and show either a quiet or an "
+        "active response to the identical background state, depending on what happened just before the "
+        "measurement -- a genuine confound for any protocol that assumes one repeatable operating point per "
+        "subject, separate from (and in addition to) the identifiability problems documented elsewhere in "
+        "this report.",
     ]))
 
     s.append(P("How this conclusion could be wrong", H1))
@@ -151,31 +200,41 @@ def content():
         "<b>The m-balance axis is one specific, clean parameterization</b> (c1,c2 vs c3,c4 scaled "
         "oppositely, holding their geometric mean fixed) -- real disease-driven parameter shifts need not "
         "move along this exact direction. The T2/T3 teachers from the earlier robustness check (full "
-        "independent ±30% draws) landed in a genuinely oscillatory regime this clean sweep did NOT "
-        "originally find (a 'pure E-dominant, low-drive' island that turned out to be a damped-spiral "
-        "artifact on THIS axis) -- meaning other parameter directions can reach genuine instability that "
-        "this 2D slice doesn't show. The map is a useful cross-section, not the whole picture.",
-        "<b>Grid resolution.</b> 15x19 points with linear/log spacing could miss thin spikes in the "
-        "identifiability landscape or narrow true-limit-cycle slivers between grid points.",
+        "independent ±30% draws) land in genuinely oscillatory regimes this clean sweep's analytic method "
+        "has not been extended to check (equilibria() as written only supports the m-axis, not arbitrary "
+        "a/b/c1-c4 perturbations) -- other parameter directions can reach dynamics this 2D slice doesn't show. "
+        "The map is a useful cross-section, not the whole picture.",
+        "<b>Grid resolution.</b> 15x19 points with linear/log spacing could miss thin bistable slivers or "
+        "narrow true-limit-cycle regions between grid points -- the analytic method removes integration-step "
+        "error but not grid coarseness.",
         "<b>Backprop validation used only 10 starts at 3 points.</b> Consistent with the much larger E9-E12 "
         "study's conclusion (loop gains are genuinely harder to recover than CRB implies, especially "
-        "c1·c2), which is reassuring, but the exact medians here could shift with more starts.",
+        "c1·c2), which is reassuring, but the exact medians here could shift with more starts. All three "
+        "points were independently re-confirmed as genuinely stable (not artifacts) by the corrected method.",
     ]))
 
     s.append(P("Recommended next step", H1))
     s.append(P("Adopt RICH-style protocols (paired-pulse, train, E/I-targeted injection) as the default for "
               "any future firing-state fitting -- the single-pulse-only design used in E7/E9/E10 was "
-              "leaving most of the achievable identifiability on the table, especially for E-dominant states. "
-              "The remaining open problem is specific and now well-characterized: c1&middot;c2 in E-dominant "
-              "states. If that combination matters clinically, it needs either more stimulus diversity still "
-              "(not yet tried: higher-amplitude dosing, longer trains, at the firing state) or an "
-              "uncertainty-aware method (Part C) rather than more point-estimate tuning.", BOX))
+              "leaving most of the achievable identifiability on the table, especially for E-dominant states, "
+              "now known to be an even larger effect than first measured. The remaining open problem is "
+              "specific and well-characterized: c1&middot;c2 in E-dominant states. If that combination "
+              "matters clinically, it needs either more stimulus diversity still (not yet tried: "
+              "higher-amplitude dosing, longer trains) or an uncertainty-aware method (Part C) rather than "
+              "more point-estimate tuning -- section 6 of reports/single_node_conclusions.pdf has since built "
+              "and validated a first such method (Laplace approximation). Newly added: extend "
+              "<font face='DVM'>equilibria()</font> to arbitrary (not just m-axis) parameter perturbations, "
+              "so the T2/T3-style independently-drawn teachers can be placed on this same analytic map rather "
+              "than relying on simulation alone.", BOX))
 
     s.append(P("Reproduce", H1))
-    s.append(P("<font face='DVM'>Phase diagram + CRB: see scripts referenced in reports/DECISIONS.md "
-              "(2026-11-22 entries). Backprop validation and hysteresis checks: standalone scripts, not yet "
-              "folded into single_node_tms.py (logged as a follow-up if this becomes a permanent part of "
-              "the study).</font>", SMALL))
+    s.append(P("<font face='DVM'>Phase diagram (corrected): .venv/bin/python -c \"import sys; "
+              "sys.path.insert(0,'.'); from syn_brain.scripts.jr_parameters_explainer import equilibria\" "
+              "-- see scripts/jr_parameters_explainer.py for the full stability-map code.<br/>"
+              "CRB: see scripts referenced in reports/DECISIONS.md (2026-11-22 entries).<br/>"
+              "Backprop validation and hysteresis checks: standalone scripts, not yet folded into "
+              "single_node_tms.py (logged as a follow-up if this becomes a permanent part of the "
+              "study).</font>", SMALL))
     return s
 
 
