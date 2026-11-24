@@ -646,8 +646,8 @@ def content(an, sm, ts, combos):
     s = []
     s += [P("The Jansen-Rit node: what each parameter means", TITLE),
           P("and which ones TMS-EEG can identify, with a focus on E/I balance and the bifurcations around it", _H2),
-          P(f"syn_brain explainer · {datetime.date.today():%d %B %Y} · based on the single-node virtual-TMS study "
-            "(reports/single_node_tms_study.pdf)", CAP)]
+          P("syn_brain explainer · revised 24 November 2026 · based on the single-node studies, the Laplace "
+            "calibration and the 10-node network pilot (reports/executive_summary.pdf)", CAP)]
     s.append(P(
         "A Jansen-Rit (JR) node models one cortical column as three interacting neural populations. Each parameter has "
         "a physical meaning, but not every parameter can be measured from EEG. This note explains each parameter in "
@@ -658,9 +658,9 @@ def content(an, sm, ts, combos):
     s.append(table([["Class", "Meaning", "Parameters"],
                     ["<font color='#2a9d8f'><b>Stiff</b></font>", "pinned by almost any TMS-EEG recording", "k, a"],
                     ["<font color='#b8860b'><b>Conditional</b></font>",
-                     "identifiable only with the right stimulus or brain state", "b, c3 (c3·c4), p"],
+                     "identifiable only with the right stimulus, brain state or network design", "b, c1·c2, c3·c4, p"],
                     ["<font color='#e76f51'><b>Sloppy</b></font>",
-                     "changes by large factors hardly change the EEG", "c1, c2, c4, v0, r"],
+                     "changes by large factors hardly change the EEG", "c1, c2, c3, c4 individually; v0, r"],
                     ["<font color='#9d0208'><b>Gauge</b></font>",
                      "no data can identify them; fixed by convention", "A, B, vmax"]], [0.15, 0.6, 0.25]))
 
@@ -784,8 +784,12 @@ def content(an, sm, ts, combos):
                  f"{pct(combos['SP1000']['c1·c2'])}, ratio c1/c2 {pct(combos['SP1000']['c1/c2'])}. At p = 120: c1 "
                  f"{pct(s120('c1'))}, c2 {pct(s120('c2'))}. Backprop progress c1 {pr['c1']:+.2f}, c2 {pr['c2']:+.2f} "
                  "(c2 moves away from the truth).",
-                 "Not identifiable individually at rest. Interpret only the product c1·c2, and only in an active state. "
-                 "The hardest loop to recover even at p = 150 (one of 4 perturbed teachers fails at 91–95%).", "sloppy")
+                 "c1 and c2 are never identifiable individually; interpret only the product c1·c2. With the validated "
+                 "recipe (rich protocol, ≥ 15 restarts from population-nominal starts, lowest loss, Laplace interval) "
+                 "in an active state, c1·c2 is recovered with 7.5% median error and calibrated 90% intervals (96% "
+                 "coverage, 24 subjects; small downward bias). A single pulse does not suffice (one of 4 subjects "
+                 "failed at 91–95%), and it stays unidentifiable when excitation dominates. In a 10-node network "
+                 "(pilot) it came back within 17%.", "conditional")
     s += section("c3, c4 — the inhibitory loop",
                  "Contacts pyramidal → inhibitory interneurons (c3) and back (c4): the strength of feedback inhibition. "
                  "Interneuron loss or dysfunction would reduce them.",
@@ -795,9 +799,11 @@ def content(an, sm, ts, combos):
                  f"Bounds c3 {pct(se('SP1000', 'c3'))}, c4 {pct(se('SP1000', 'c4'))} at rest; c3·c4 "
                  f"{pct(combos['SP1000']['c3·c4'])}. At p = 120: c3 {pct(s120('c3'))}, c4 {pct(s120('c4'))}. Backprop "
                  f"progress c3 {pr['c3']:+.2f}, c4 {pr['c4']:+.2f}.",
-                 "c3 (and c3·c4) become identifiable in principle once the node is in an active state; c4 alone stays "
-                 "weak. In practice backprop recovers c3·c4 at p = 150 only inconsistently (7–28% across 4 teachers). "
-                 "Interpret c3·c4 as 'inhibitory loop strength', with uncertainty.", "conditional")
+                 "c3·c4 is the most robustly measurable loop quantity. With a single pulse at p = 150 backprop recovers "
+                 "it only inconsistently (7–28% across 4 subjects); with the validated recipe and Laplace interval, "
+                 "4.0% median error with calibrated intervals (96% coverage, 24 subjects); in a 10-node network "
+                 "(pilot), within 2%. Interpret c3·c4 as 'inhibitory loop strength', always with its interval.",
+                 "conditional")
     s += section("A, B — maximum PSP amplitudes",
                  "Peak size of a single excitatory (A = 3.25 mV) or inhibitory (B = 22 mV) postsynaptic potential: "
                  "receptor density and synaptic efficacy.",
@@ -835,7 +841,10 @@ def content(an, sm, ts, combos):
         "of 120–320 /s. It enters the E equation exactly like the recurrent excitation c2·S(c1·P), whose maximum is "
         "c2·vmax = 540, so p = 150 is about 28% of the strongest possible recurrent drive. In a real brain p reflects "
         "arousal, thalamocortical input and ongoing activity. <b>neurofe has no p:</b> its network coupling is a "
-        "difference of potentials, which is zero when all nodes rest in the same state, so every node rests at p = 0."))
+        "difference of potentials, which is zero when all nodes rest in the same state, so every node rests at p = 0. "
+        "For a single node that hides the loops; in a 10-node network, however, multi-site stimulation identified the "
+        "global parameters even with every node at p = 0 (pilot; section 7). p still matters for realism: without it "
+        "synthetic responses lack the late activity of real TMS-EEG."))
     rows = [["p", "Stable state(s): E − I", "Pyramidal firing", "Sigmoid slope", "State"]]
     for p_, state in ((0, "isolated cortex; nearly silent; linear filter"),
                       (50, "quiet from a cold start, but active if it was active before (bistable)"),
@@ -904,16 +913,28 @@ def content(an, sm, ts, combos):
 
     # -------------------------------------------------------------- summary
     s.append(P("7  Summary", H1))
+    s.append(P("In a network", H2))
+    s.append(P(
+        "Everything above concerns one column. In a 10-node network with neurofe's own coupling (all nodes at p = 0), "
+        "stimulating 8 sites at 3 intensities constrained every global parameter to within 3% in theory, and backprop "
+        "recovered a, b, g, c3, c4, mu and k within 4% and c1·c2 within 17% from starting errors up to 96% "
+        "(docs/network_study_plan.txt; pilot with 1–2 synthetic subjects and a matched, noise-free teacher). Many "
+        "sites probe the same shared parameters from different angles, and strongly coupled neighbours receive large "
+        "transient inputs. Two conditions: delays must be differentiable (fractional) for conduction velocity to be "
+        "learned, and parameters must be optimised on a log scale. Whether this holds for the late response, for "
+        "realistic data, and for per-edge connection gains is the next test."))
     rows = [["Param.", "Meaning in one line", "Class", "Use it as"],
             ["k", "how hard the pulse hits the cortex", "stiff", "per-session nuisance; fix with E-field modelling if "
                                                               "possible"],
             ["a", "excitatory synaptic speed", "stiff", "reliable marker"],
             ["b", "inhibitory synaptic speed", "conditional", "marker with E+I / multi-condition protocols or active "
                                                              "state"],
-            ["c1, c2", "excitatory loop contacts", "sloppy", "only as c1·c2, only in an active state; invisible when "
-                                                             "excitation dominates (interneurons saturate)"],
-            ["c3, c4", "inhibitory loop contacts", "conditional", "as c3·c4 ('inhibitory loop strength') in an active "
-                                                                  "state, with a rich protocol"],
+            ["c1, c2", "excitatory loop contacts", "conditional (product)", "only as c1·c2, with the recipe in an "
+                                                                           "active state or a multi-site network design; "
+                                                                           "invisible when excitation dominates"],
+            ["c3, c4", "inhibitory loop contacts", "conditional (product)", "as c3·c4 ('inhibitory loop strength'), "
+                                                                            "with the recipe; the most robust loop "
+                                                                            "quantity"],
             ["m", "E/I balance: excitatory vs inhibitory loop strength", "conditional",
              "decides quiet / active / oscillating and how informative TMS is; identified best near balance"],
             ["A, B", "PSP amplitudes", "gauge", "fixed convention; never interpret"],
@@ -921,12 +942,16 @@ def content(an, sm, ts, combos):
             ["v0, r", "threshold, threshold spread", "sloppy", "fixed; v0 trades off with p"],
             ["p", "background input from the rest of the brain", "conditional",
              "sets the operating point; choose p ≈ 150 (active, away from the jump); history-dependent between "
-             "p ≈ 37 and 115; missing in neurofe"]]
+             "p ≈ 37 and 115; missing in neurofe"],
+            ["g", "network coupling strength", "identifiable (pilot)", "global, from multi-site stimulation"],
+            ["mu", "conduction velocity (delays)", "identifiable (pilot)", "needs differentiable (fractional) delays; "
+                                                                          "neurofe's integer delays give no gradient"]]
     s += [table(rows, [0.09, 0.33, 0.13, 0.45]), P("Table 8. One-line summary of every parameter.", CAP)]
     s.append(P(
         "In short: TMS-EEG measures <i>how hard the cortex was hit</i> (k·A) and <i>how fast its synapses respond</i> "
         "(a, and b with the right stimulus). It measures the <i>circuit</i> (the c's) only as loop strengths, and only "
-        "when the column is active, which in a model requires a background drive p that neurofe does not have. How "
+        "with the right design: an active column with rich stimulation, or several stimulation sites in a network; "
+        "then with honest intervals. How "
         "informative TMS is depends strongly on the E/I balance: near balance the loops are measurable with a rich "
         "protocol; when excitation dominates, the excitatory loop saturates and becomes invisible. Absolute synaptic "
         "strength, synapse number and maximum firing rate are never visible to EEG."))

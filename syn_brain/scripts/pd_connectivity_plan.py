@@ -21,8 +21,8 @@ from reportlab.platypus import Image, KeepTogether, PageBreak, SimpleDocTemplate
 from syn_brain.core.paths import RESULTS_DIR, SYN_ROOT
 from reportlab.lib.styles import ParagraphStyle
 
-from syn_brain.scripts.single_node_tms_report import BOX, CAP, SMALL, TITLE, W, P, bullets, table
-from syn_brain.scripts.single_node_tms_report import H1 as _H1, H2 as _H2
+from syn_brain.core.report_style import BOX, CAP, SMALL, TITLE, W, P, bullets, table
+from syn_brain.core.report_style import H1 as _H1, H2 as _H2
 
 H1 = ParagraphStyle("h1k", parent=_H1, keepWithNext=1)     # never leave a heading at the bottom of a page
 H2 = ParagraphStyle("h2k", parent=_H2, keepWithNext=1)
@@ -84,8 +84,9 @@ def content():
     s = []
     s += [P("Connections between Jansen-Rit nodes", TITLE),
           P("A study plan toward early Parkinson's disease detection with model-based TMS-EEG", H2),
-          P(f"syn_brain study plan · proposed {datetime.date.today():%d %B %Y} · builds on "
-            "reports/single_node_tms_study.pdf and docs/background_drive_note.txt", CAP)]
+          P("syn_brain study plan · proposed 22 November 2026 · revised 24 November 2026 after the single-node "
+            "posterior and the 10-node network pilot · builds on reports/executive_summary.pdf, "
+            "docs/network_study_plan.txt and docs/background_drive_note.txt", CAP)]
 
     s.append(P("Summary", H1))
     s.append(P(
@@ -93,10 +94,13 @@ def content():
         "came up of how Jansen-Rit (JR) nodes are connected in our network model. The answer, that connections are "
         "approximately linear, is correct, and the single-node study shows it is a substantive limitation. neurofe's "
         "coupling is linear, diffusive, symmetric and excitatory only, provides no mean drive, and the anatomy contains "
-        "no subcortical nodes. Every node therefore rests in a quiet, near-linear state in which loop mechanisms are "
-        "invisible in TMS-EEG. PD is primarily a disorder of loops (basal ganglia–thalamus–cortex) and of "
-        "dopamine-dependent gain on them, so the present model cannot represent it. This plan (1) tests which "
-        "connection form lets the network enter an active state and makes connection changes visible, (2) adds a minimal "
+        "no subcortical nodes. PD is primarily a disorder of loops (basal ganglia–thalamus–cortex) and of "
+        "dopamine-dependent gain on them, so the present model cannot represent it. <b>Revision (24 Nov):</b> one "
+        "premise has changed. A single quiet node hides its loops, but a 10-node network with neurofe's own coupling "
+        "turned out to identify its global parameters, loop strengths included, from multi-site, multi-intensity "
+        "stimulation once the fitting procedure is fixed (pilot). So mean drive is not needed for identifiability; "
+        "the case for new connections now rests on representing PD (sign, direction, subcortical loops). This plan "
+        "(1) completes the coupling ladder with the PD-relevant rungs, (2) adds a minimal "
         "cortico-basal ganglia-thalamic loop with dopamine-dependent gain, (3) measures how small a dopamine-like change "
         "TMS-EEG can detect, and (4) quantifies how much MRI-derived priors improve identification.", BOX))
 
@@ -138,15 +142,25 @@ def content():
     s += [table(rows, [0.2, 0.37, 0.43]), P("Table 1. Connection properties, current model against what is needed.", CAP)]
 
     # ------------------------------------------------------------- 3
-    s.append(P("3  What the single-node study already shows", H1))
-    rows = [["Finding (single-node study)", "Consequence for connections and PD"],
-            ["Laplacian coupling gives no mean drive; a node with no drive rests at E − I ≈ −1.9 mV, far below "
-             "threshold (6 mV), sigmoid slope 0.03 of a possible 0.7",
-             "Changing connection strength barely changes the resting state; the network stays quiet and "
-             "near-linear"],
-            ["A quiet node behaves like a linear filter; loop gains appear only in an active state (tonic drive "
-             "p ≳ 115 moves the node to threshold and the c3 bound from 129% to ~5%)",
-             "Loop-level disease mechanisms are invisible unless the network is driven into an active state"],
+    s.append(P("3  What the study has shown so far", H1))
+    rows = [["Finding", "Consequence for connections and PD"],
+            ["Single node: with no drive a node rests at E − I ≈ −1.9 mV, far below threshold (6 mV); it behaves like "
+             "a linear filter and its loop gains are invisible to a single pulse (bounds 56–252%)",
+             "An isolated, quiet column cannot reveal its circuit"],
+            ["Single node: an active state (p ≈ 150) plus rich stimulation, ≥ 15 restarts and a Laplace posterior "
+             "recover loop strengths with calibrated uncertainty (4–8% error, 96% coverage, 24 subjects)",
+             "A validated estimation recipe now exists for the detectability and attribution tests (Parts 3–4)"],
+            ["<b>10-node network (pilot):</b> with neurofe's own coupling and 8 sites × 3 intensities, all global "
+             "parameters have bounds &lt; 3%, and backprop recovers a, b, g, c3, c4, mu, k within 4%",
+             "<b>Mean drive is not needed for identifiability</b>; multi-site stimulation of a network constrains the "
+             "shared parameters. Connection changes are visible."],
+            ["10-node network: coupling with mean drive (firing rates) saturates neurofe's input bound at nominal g; "
+             "best bounds at g ≈ 100–120, but the fit got stuck from a single start",
+             "Rate-based coupling needs rescaling of g and restarts; a secondary option, not a prerequisite"],
+            ["Excitation-dominant columns saturate their excitatory interneurons; quiet and active states coexist "
+             "near the transition (hysteresis)",
+             "Disease states that push circuits toward excitation or toward the transition are the hardest to "
+             "measure; protocols must be designed for them"],
             ["A, B, vmax are exactly degenerate with the c's and k",
              "EEG alone cannot separate synaptic strength from synapse number; external measurements are needed to "
              "break such ties"],
@@ -157,8 +171,9 @@ def content():
              "active"],
             ["Fitting the early window predicts the late window with 91% error, even with a perfect model",
              "Late TEP components, which carry loop information, need dedicated protocols and loss weighting"]]
-    s += [table(rows, [0.5, 0.5]), P("Table 2. Single-node results relevant to the connection question "
-                                     "(details in reports/single_node_tms_study.pdf).", CAP)]
+    s += [table(rows, [0.5, 0.5]), P("Table 2. Results relevant to the connection question (details in "
+                                     "reports/executive_summary.pdf and docs/network_study_plan.txt). Network results "
+                                     "are a pilot: 1–2 synthetic subjects, matched noise-free teacher.", CAP)]
     s.append(PageBreak())
 
     # ------------------------------------------------------------- 4
@@ -203,6 +218,21 @@ def content():
     s.append(P("<b>Decision.</b> The lowest rung that gives an active operating point, realistic late TEP features, and "
                "bounds below 20% on the coupling parameters becomes the default teacher, and the proposed change to "
                "neurofe's coupling."))
+    s.append(P("Status, 24 November (criteria unchanged; reported against them)", H2))
+    rows = [["Rung", "Status", "Against the Q1 criteria"],
+            ["L0", "Measured at 10 nodes (Fisher + backprop pilot)", "Coupling bounds &lt; 20%: <b>pass</b>. Active "
+                                                                     "operating point: <b>no</b> (nodes quiet). Late/early "
+                                                                     "ratio: not re-measured (0.15–0.19 earlier, real "
+                                                                     "0.84): <b>likely fail</b>"],
+            ["L1", "Single node only (background-drive sweep)", "Active state reachable (p ≳ 115); network not tested"],
+            ["L2", "Implemented (coupling option); Fisher sweep over g; pilot", "Bounds &lt; 2% at g ≈ 100–120; fit "
+                                                                                "stuck from one start; late/early "
+                                                                                "ratio not measured"],
+            ["L3", "Not started", "The first PD-relevant rung"],
+            ["L4", "Not started (Part 2)", "—"]]
+    s += [table(rows, [0.08, 0.4, 0.52]), P("Table 4b. No rung passes all of Q1 yet. Identifiability no longer "
+                                            "requires a new coupling; teacher realism (late activity) and PD "
+                                            "representation still do.", CAP)]
 
     # ------------------------------------------------------------- 6
     s.append(PageBreak())
@@ -276,12 +306,14 @@ def content():
     # ------------------------------------------------------------- 9
     s.append(P("9  Methods and code", H1))
     s += bullets([
-        "Reuse: core/node.py (JR node, programmable stimulation, tonic drive), core/diffsim.py (network), the Fisher, "
-        "profile-likelihood and batched-training code of scripts/single_node_tms.py.",
-        "New: core/loop.py (subcortical populations, signed and directed coupling, dopamine gain); a coupling-form "
-        "switch in the network simulator (L0–L3).",
-        "Fitting: log-scaled parameters throughout; Levenberg–Marquardt for the global parameters; simulation-based "
-        "inference for full posteriors once the model is fixed.",
+        "Reuse: core/node.py (JR node, programmable stimulation, tonic drive); core/diffsim.py (network, fractional "
+        "delays, log-scaled parameters, coupling_mode switch for L0/L2); scripts/identifiability.py and "
+        "scripts/recover_clean.py (network Fisher and recovery); scripts/laplace_calibration.py (validated posterior).",
+        "New: core/loop.py (subcortical populations, signed and directed coupling, dopamine gain); L3 in the network "
+        "simulator.",
+        "Fitting: the validated recipe (rich multi-condition stimulation, ≥ 15–20 restarts from population-nominal "
+        "starts, lowest-loss selection, Laplace interval); simulation-based inference where posteriors are "
+        "non-Gaussian (near transitions).",
         "Every change to neurofe's coupling is first validated here, then proposed as a neurofe change with tests.",
     ])
 
@@ -299,8 +331,9 @@ def content():
     # ------------------------------------------------------------- 11
     s.append(P("11  Schedule", H1))
     rows = [["Weeks", "Work", "Gate"],
-            ["1–2", "Coupling ladder L0–L3 on 10 nodes; operating points; TEP realism; identifiability",
-             "Default coupling chosen (Q1)"],
+            ["1–2", "Prerequisite shared with the main study: the 10-node gate (≥ 8 subjects, held-out sites, late "
+                    "window, realistic teacher). In parallel: L3 (signed, directed) at 10 nodes; late/early TEP ratio "
+                    "for L0–L3", "Network gate passed; default coupling chosen (Q1)"],
             ["3–4", "Literature review of basal ganglia mean-field models; core/loop.py; sanity checks (beta with δ)",
              "Loop teacher validated"],
             ["5–6", "Loop identifiability (Q2); disease teachers D1–D5, detectability and attribution (Q3)",
