@@ -126,6 +126,56 @@ def content():
               "signal and noise); screen by error in the identifiable combinations (b, c1&middot;c2, "
               "c3&middot;c4) and the stiff parameters (a, k) — those are the ones that predict whether a fit "
               "will actually generalize.", BOX))
+    s.append(PageBreak())
+
+    s.append(P("5. A practical fix: ensemble + richer stimulus, NOT hard parameter bounds", H1))
+    s.append(P("Section 3 showed a single fit is unreliable at the firing state. Three candidate practical "
+              "fixes were tested directly at the hardest case (E-dominant, m=1.87, p=105) rather than assumed: "
+              "a bigger ensemble of random restarts (20, up from 10), a hard box constraint on individual "
+              "c1,c2,c3,c4 (clamped to 0.5-2.0x the population-nominal range, NOT each teacher's own truth), "
+              "and checking whether the lowest-training-loss restart in an ensemble is actually the most "
+              "accurate one.", BODY))
+    s.append(table([
+        ["Condition", "c1·c2 median (20 starts)", "c3·c4 median (20 starts)"],
+        ["E-dominant, free (no bounds)", "26.2%", "12.4%"],
+        ["E-dominant, bounded (hard clamp)", "63.6%", "27.3%"],
+        ["balanced, free", "38.2%", "17.3%"],
+        ["balanced, bounded", "37.2%", "18.9%"],
+    ], [0.4, 0.3, 0.3]))
+    s.append(P("Table 3. Hard box constraints do not help, and actively hurt in the E-dominant case (median "
+              "error roughly DOUBLES despite the true values sitting comfortably inside the bounds). Likely "
+              "cause: a hard clamp has zero gradient the instant a parameter hits the wall, and in a landscape "
+              "already known to be rugged near these states, that can trap the optimizer against the wall "
+              "instead of letting it find its way to the true combination. A soft/differentiable penalty "
+              "(not tested here) would not have this failure mode and is the better way to add prior "
+              "knowledge if that's wanted.", CAP))
+    s.append(P("The ensemble itself, though, is informative and useful -- but only combined with the right "
+              "stimulus. Checked whether \"pick the lowest-loss restart\" is a trustworthy selection rule "
+              "(the only thing you could do with real data, where the true parameters are unknown):", BODY))
+    s.append(fig(BIF_OUT / "fig_loss_vs_accuracy.png",
+                "Figure 4. Same E-dominant point, 20 restarts, lowest-loss start circled. With SP1000 alone "
+                "(left), the single best-FITTING model has 64% c1·c2 error -- among the WORST in the whole "
+                "ensemble, despite a training loss orders of magnitude lower than any other start. With RICH "
+                "(right), the lowest-loss start is also the most accurate one (3.1%/0.8%), and loss orders "
+                "the rest of the ensemble sensibly too."))
+    s.append(P("Spearman correlation between final loss and parameter error, across the 20 restarts: with "
+              "SP1000 alone, c1&middot;c2 rho=+0.09 (p=0.70, no relationship) and c3&middot;c4 rho=+0.56 "
+              "(p=0.01, moderate); with RICH, c1&middot;c2 rho=+0.83 and c3&middot;c4 rho=+0.81 (both "
+              "p&lt;0.001). This is the mechanistic reason richer stimulation matters: it doesn't just tighten "
+              "the Cramer-Rao bound, it makes the LOSS SURFACE ITSELF discriminating, so that \"which fit "
+              "looks best\" becomes a trustworthy question to ask. With a single pulse, that question has no "
+              "good answer -- the single best-fitting model can be confidently, invisibly wrong.", BODY))
+    s.append(P("<b>Validated practical recipe:</b> use the RICH protocol (or similar multi-condition "
+              "stimulation), run &ge;20 random restarts, and select (or report) the lowest-training-loss one. "
+              "Do NOT add naive hard bounds on individual c1-c4. This is a cheap, already-tested alternative "
+              "to building a full posterior method, though it only gives a point estimate (with an implicit, "
+              "unquantified confidence from how tightly the ensemble agrees) rather than honest calibrated "
+              "uncertainty -- a real posterior method remains the more rigorous long-term answer.", BOX))
+    s.extend(bullets([
+        "Caveat: tested at ONE point (E-dominant, nominal-shape teacher) with ONE seed. The sign of the "
+        "SP1000-vs-RICH difference (no correlation vs strong correlation) is a clean, large, mechanistically "
+        "sensible effect, but the exact correlation values would move with a different point or more restarts.",
+    ]))
 
     s.append(P("How this conclusion could be wrong", H1))
     s.extend(bullets([

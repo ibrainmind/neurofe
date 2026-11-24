@@ -177,3 +177,38 @@ should be noise, not signal, with respect to prediction). This independently cor
 structural identifiability analysis using real generalization behavior, not just Fisher theory.
 Practical takeaway folded into the report: screen fitted models by error in identifiable
 combinations (b, c1·c2, c3·c4) and stiff parameters (a, k), not by raw overall parameter error.
+
+## 2026-11-23 — Tested three practical fixes for unreliable c1·c2/c3·c4 recovery (ensemble, hard bounds, loss-as-selector)
+
+William asked for a concrete fix rather than just a diagnosis, and specifically to try bounding
+individual c1-c4. Tested directly at the hardest case (E-dominant, m=1.87, p=105), 20 restarts
+each condition. Added as section 5 of `reports/single_node_conclusions.pdf`.
+
+**Hard box constraints on c1-c4 (clamped to 0.5-2.0x population-nominal) do NOT help -- they
+roughly DOUBLE the median error** (E-dominant c1·c2: 26.2%->63.6%; c3·c4: 12.4%->27.3%), even
+though the true values sit comfortably inside the bounds. Likely mechanism: a hard clamp has
+zero gradient the instant a parameter hits the wall, which can trap the optimizer against the
+wall in a landscape already known to be rugged, rather than helping it find the true answer.
+**Decision: don't pursue hard bounds further; a soft/differentiable penalty would avoid this
+failure mode but was not tested this session** (flagged as the correct follow-up if priors are
+wanted).
+
+**A bigger ensemble (20 vs 10 starts) + picking the lowest-training-loss restart IS a valid,
+cheap practical fix -- but only together with the RICH stimulus protocol.** Checked directly
+whether "best loss" predicts "best parameters" across 20 restarts, comparing SP1000-only vs
+RICH: with SP1000 alone, final loss does NOT predict c1·c2 accuracy at all (Spearman rho=+0.09,
+p=0.70) -- the single best-FITTING model in the whole ensemble had 64% c1·c2 error, among the
+WORST of the 20, despite a training loss orders of magnitude lower than every other start. With
+RICH, loss strongly predicts accuracy (rho=+0.83, p<0.001) and the best-loss start is genuinely
+the most accurate (3.1%/0.8% error). **Mechanism: richer stimulation doesn't just tighten the
+Cramer-Rao bound, it makes the loss surface itself discriminating, so "which fit looks best" is
+only a trustworthy question with the right stimulus.** This directly explains the earlier
+settle-time finding ("both runs converge to comparably good loss despite very different
+parameters") -- that was always an SP1000-only comparison.
+
+**Decision: validated practical recipe going forward is RICH protocol + >=20 restarts + select
+by lowest loss, NOT hard parameter bounds.** This is a cheap point-estimate fix, not a
+substitute for a real posterior method (no calibrated uncertainty), but it is now a tested,
+concrete answer rather than a hopeful assumption. Caveat: tested at one point with one seed;
+the qualitative SP1000-vs-RICH contrast is large and mechanistically well-explained, but exact
+correlation values would shift elsewhere.
