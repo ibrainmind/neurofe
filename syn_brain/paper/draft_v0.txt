@@ -1,4 +1,4 @@
-TENTATIVE PAPER DRAFT  (v0, 2026-11-24)
+TENTATIVE PAPER DRAFT  (v0.1, 2026-11-24; updated with the Laplace calibration and the 10-node pilot)
 =====================================
 
 Status   : internal draft for discussion; not for circulation outside the team.
@@ -41,10 +41,16 @@ with a perfect model and no noise), reproducing the generalization failures obse
 TMS-EEG and intracranial data without any model misspecification. Identifiability depends
 strongly on brain state: excitation-dominant columns saturate their excitatory loop, and the
 quiet-to-active transition is bistable. Richer stimulation not only tightens the bounds but makes
-the loss surface discriminative, so that the best-fitting model is also the most accurate. We
-give a practical recipe and argue that mechanistic conclusions from such fits require
-identifiability and robustness checks.
-[TODO: one sentence on network-scale result once section 2.8 is done]
+the loss surface discriminative, so that the best-fitting model is also the most accurate; with
+this recipe and a Laplace posterior, loop strengths are recovered with calibrated uncertainty
+(median error 4-8%, 96% coverage of 90% intervals across 24 random subjects). At network scale
+the picture improves: with log-scaled parameters, differentiable delays and multi-site,
+multi-intensity stimulation, a 10-node network recovers its global parameters, including
+coupling strength and conduction velocity, which the published procedure cannot move. The
+failures of the published pipeline are therefore largely failures of the fitting procedure,
+and mechanistic conclusions from such fits require identifiability and robustness checks.
+[TODO: revise the network sentence after the >= 8-subject gate, realistic teacher and
+late-window tests (section 2.8)]
 
 
 1  INTRODUCTION
@@ -77,8 +83,13 @@ identifiability and robustness checks.
 1.3 Approach and summary of findings.
   - Synthetic teacher-student design: the truth is known, so method failures can be separated
     from misspecification. We start with the smallest unit, a single JR column with a real
-    leadfield read-out, where everything can be analysed exactly, then [TODO] the network.
-  - Findings (one line each, matching sections 2.2-2.7).
+    leadfield read-out, where everything can be analysed exactly, then a 10-node network with
+    the cleaned-up fitting.
+  - Findings (one line each, matching sections 2.2-2.8): near-linear filter at rest; exact
+    symmetries and sloppiness; backprop leaves sloppy parameters at their start; good fits do
+    not generalize; brain state decides identifiability; rich stimulation makes the loss
+    discriminative and enables calibrated posteriors; at network scale the global parameters
+    are recoverable once the fitting procedure is fixed.
 
 
 2  RESULTS
@@ -185,29 +196,66 @@ identifiability and robustness checks.
   - Practical recipe: log-scaled parameters; multi-condition stimulation (amplitudes, paired
     pulses, E+I targeting); an active operating point away from both transitions; >= 20
     restarts; select by lowest loss; report identifiable combinations with uncertainty.
+  - Calibrated uncertainty (Laplace posterior: MAP + Fisher covariance). 24 random subjects
+    (all 7 parameters perturbed +-30%, screened for a stable active state at p = 150), RICH
+    protocol, 15 restarts started from POPULATION-NOMINAL values (blind to each subject's
+    truth; earlier experiments started around the truth), lowest loss selected:
+      median |error|  c1*c2 7.5%,  c3*c4 4.0%
+      90% interval coverage 96% (23/24) for both
+      systematic bias  -5.9% (p = 0.014) and -3.3% (p = 0.023): 18/24 estimates too low,
+      most likely a "winner's curse" from selecting the best of many restarts.
+    [TODO] test whether the bias grows with the number of restarts and whether selecting on a
+    held-out condition removes it; extend calibration to E-dominant and near-transition states.
 
-2.8 Network scale  [FIG 8]  [TODO]
-  - Existing: 10-node rung-R0 test (tier S1, 3 teachers): only k recovered (errors -2.6%,
-    +6.3%, +0.3%); conduction velocity mu receives no gradient (integer delays); g, c1, c2
-    gradients ~1e4 smaller than a or k; b, c4, std_in converge to the same values whatever the
-    truth. EEG Pearson after training 0.985-0.995 vs 0.979-0.997 untrained: Pearson barely
-    depends on the parameters.
-  - Synthetic TEPs with nominal parameters lack late activity (GMFA peak 24-38 uV at 14 ms vs
-    6.1 uV at ~105 ms real; late/early ratio 0.15-0.19 vs 0.84). With diffusive coupling every
-    node rests in the quiet state of section 2.2.
-  - [TODO] Fisher spectrum of the 10-node network, tiers S1 and S2: number of identifiable
-    combinations vs number of fitted parameters.
-  - [TODO] Temporal and held-out-site tests at R0 on the 10-node network, with and without
-    mean drive / rate-based coupling.
+2.8 Network scale  [FIG 8]  (pilot done; gate [TODO])
+  - Baseline: the published procedure fails at 10 nodes. Phase 1 (neurofe's JansenRit.fit,
+    tier S1, 3 teachers, single site): only k recovered (errors -2.6%, +6.3%, +0.3%); mu
+    receives no gradient (integer delays); g, c1, c2 gradients ~1e4 smaller than a or k; b,
+    c4, std_in converge to the same values whatever the truth. EEG Pearson after training
+    0.985-0.995 vs 0.979-0.997 untrained: Pearson barely depends on the parameters.
+  - Fisher bounds, 10 nodes, tier S1 (a, b, g, c1-c4, mu, k), 8 sites x 3 amplitudes, 0.42 uV
+    noise, neurofe's own (Laplacian, zero-mean) coupling: every parameter < 3%
+    (a 0.013%, b 0.58%, g 0.0033%, c1 2.5%, c2 0.15%, c3 1.1%, c4 2.7%, mu 0.003%, k 0.07%).
+    Unlike the single node at rest (c's 56-252%), pooling many sites and intensities
+    constrains the shared global parameters.
+  - Alternative coupling with mean drive (neighbours send firing rates, g * sum w_ij S(E_j)):
+    at nominal g it saturates neurofe's input bound (U = 500) and loses information
+    (bounds 35-1400%); at g ~ 100-120 all bounds < 2%. Degrades on both sides (re-saturation
+    above, disengagement below).
+  - Backprop pilot (one random subject drawn +-50% from nominal; student starts at nominal;
+    starting errors up to 96%: g +91%, c1 +96%, b +49%, k -28%, c1*c2 +61%; 300 iterations;
+    full 8 x 3 design):
+      Laplacian coupling: loss 0.11 -> 5.5e-6; a +0.1%, b -0.2%, g +0.6%, c3 +2.2%,
+      c4 -3.7%, mu -0.2%, k -0.0%; c1*c2 -16.5%, c3*c4 -1.6%; c1/c2 split not identified.
+      Mean-drive coupling (g = 100): stuck at loss 7.5e-3 from iteration 60; g +114%,
+      c1*c2 +547%: Fisher-good but landscape-bad.
+    Independent replication (same design, 150 iterations, run before the coupling option
+    existed): b, g, c3, mu, k recovered (progress ~1); c1*c2 -29% and still improving.
+  - Even with ONE site and ONE amplitude (Phase-1-like data) the cleaned-up fitting recovers
+    most parameters for one of two subjects and predicts the 7 held-out sites within 2.0% and
+    8.1% (whole window; starting error 37% and 102%); one subject's g stays stuck (+62%).
+  - Interpretation: Phase 1's failure was mainly the fitting procedure (raw parameters,
+    integer delays, single condition, single fit), not missing mean drive or the network.
+    Hypothesis for why networks beat the single node: strongly coupled neighbours receive
+    large transient inputs that push them into the nonlinear range a quiet isolated node never
+    reaches. [TODO: check by measuring sigmoid-slope excursions per node during the response]
+  - [TODO] Gate: >= 8 random subjects; held-out sites (train 6, test 2); late-window and
+    temporal hold-out (the single node's main failure); realistic teacher (neurofe-exact
+    simulator, 10x finer step, 0.42 uV sensor noise); network Laplace calibration; tier S2
+    Fisher check at 10 nodes; then 20 nodes.
 
 2.9 Real data  [FIG 9]  [TODO]
   - [TODO] Ye's temporal and cross-site hold-out on the public TMS-EEG dataset (and CCEP),
-    with the same fitting procedure; optionally the recipe of 2.7 applied to real data.
+    with the published procedure AND with the cleaned-up fitting (tier S1, log-scaled
+    parameters, fractional delays, multi-condition design). Now the decisive test: if held-out
+    sites transfer with the cleaned-up fitting, the published pipeline's choices (raw
+    parameters, per-edge gains and fitted leadfield, single fits) caused the real-data
+    failures; if not, model mismatch is implicated (misspecification rungs R2-R6).
 
-2.10 Uncertainty-aware estimation  [TODO, optional for v1]
-  - [TODO] One estimator that reports uncertainty (simulation-based inference or variational
-    Laplace) on the single-node problem: does it correctly report c1*c2 as undetermined at
-    rest, and calibrated intervals at p = 150 with RICH?
+2.10 Uncertainty-aware estimation  (single node done: see 2.7; network [TODO])
+  - Laplace posterior validated on the single node (2.7). [TODO] port to the network;
+    optionally compare with simulation-based inference for non-Gaussian posteriors near
+    transitions.
 
 
 3  DISCUSSION
@@ -217,8 +265,17 @@ identifiability and robustness checks.
   - Reliable: how strongly the cortex responds (k*A) and how fast excitatory synapses act (a);
     inhibitory kinetics (b) with the right protocol.
   - Conditional: loop strengths, only as products, only in an active state, only with
-    multi-condition stimulation; not robust across subjects.
-  - Never: synapse strength vs number (A, B vs c's), maximum firing rate.
+    multi-condition stimulation; then recoverable with calibrated uncertainty in well-behaved
+    states, but not when excitation dominates.
+  - In networks (pilot): global parameters, including coupling and conduction velocity, from
+    multi-site, multi-intensity stimulation.
+  - Never: synapse strength vs number (A, B vs c's), maximum firing rate, the c1-vs-c2 split.
+
+3.1b The published failures are mostly fixable.
+  - Raw parameterisation (~250x worse loss), integer delays (no gradient for mu), single-
+    condition stimulation and single fits explain most of the published procedure's failure;
+    fixing them recovers a 10-node network's global parameters in the clean case. Remaining
+    open: the late window, realistic data, per-edge gains (S2/S3).
 
 3.2 Implications for published mechanistic conclusions.
   - Late TEP components as network recurrence (virtual lesions): in a quiet JR column late
@@ -253,6 +310,8 @@ identifiability and robustness checks.
     stimulation design; reproduction of real-data generalization failures.
 
 3.5 Limitations.
+  - Network results so far: 1-2 subjects, tier S1, matched noise-free teacher (same code and
+    time step: the "inverse crime"), whole-window metrics only.
   - Mostly single node; rung R0 (teacher and student share the model form) and R1 (noise);
     misspecification rungs R2-R6 not yet run.
   - One optimizer family (Adam) for the main results.
@@ -296,17 +355,24 @@ identifiability and robustness checks.
   Fold / bistable window (balanced) .............. p in [36.5, 114.6)
   E-dominant single-pulse CRB .................... > 2500%   (RICH: 10-19%)
   Loss predicts accuracy ......................... rho 0.09 (single pulse) vs 0.83 (RICH)
+  Laplace posterior, 24 subjects ................. error 7.5% / 4.0%; coverage 96%; bias -6% / -3%
+  10-node Fisher bounds, 8 sites x 3 amps ........ all parameters < 3% (g 0.003%, mu 0.003%)
+  10-node pilot recovery ......................... a, b, g, c3, c4, mu, k < 4%; c1*c2 -17%
 
 
 6  OPEN WORK BEFORE SUBMISSION  (estimate ~6-10 weeks)
 ------------------------------
 
-  1. Network: 10-node Fisher spectrum (S1, S2) + temporal and held-out-site tests at R0.  1-2 wk
-  2. One uncertainty-aware estimator on the single node (SBI or variational Laplace).    1-2 wk
-  3. Real-data section from Ye's hold-out analyses.                                      write-up
-  4. Literature review and positioning (identifiability of NMMs, DCM, SBI/TVB).          1 wk
-  5. Figure production from existing results (section 7); consistent style.              1 wk
-  6. Decide authorship, framing and whether to coordinate with the original authors.     -
+  1. Network gate: >= 8 subjects, held-out sites, late-window / temporal hold-out.        3-5 d
+  2. Realistic teacher (finer step, different integrator, sensor noise) for the network.  2-3 d
+  3. Network Laplace calibration; tier S2 Fisher check at 10 nodes.                      1 wk
+  4. Real-data section: Ye's hold-out analyses, published vs cleaned-up fitting.          1-2 wk
+  5. Single-node loose ends: winner's-curse bias; calibration in harder states.           1 wk
+  6. Literature review and positioning (identifiability of NMMs, DCM, SBI/TVB).          1 wk
+  7. Figure production from existing results (section 7); consistent style.              1 wk
+  8. Decide authorship, framing and whether to coordinate with the original authors.     -
+  Done since v0: single-node uncertainty-aware estimator (Laplace, calibrated); 10-node
+  Fisher bounds; 10-node pilot.
   Optional: the attribution test (section 8) as part of this paper or a companion.
 
 
@@ -328,9 +394,11 @@ identifiability and robustness checks.
   FIG 6  Brain state: operating point vs drive, bifurcation diagrams, stability map, E/I
          phase map with CRB overlay, hysteresis.  explainer/operating_point.png,
          bifurcation.png, stability_map.png, hysteresis.png, ei_balance_bifurcation_map.pdf Fig. 1
-  FIG 7  Loss-accuracy relation, single pulse vs RICH; hard bounds.
-         single_node_conclusions.pdf Fig. 4, Table 3
-  FIG 8  Network scale.  [TODO]
+  FIG 7  Loss-accuracy relation, single pulse vs RICH; hard bounds; Laplace calibration
+         (z-scores across 24 subjects).  single_node_conclusions.pdf Fig. 4, Table 3, Fig. 5
+  FIG 8  Network scale: Phase 1 failure vs cleaned-up fit; Fisher bounds by coupling and g
+         (docs/network_study_plan.txt section 4 table); pilot recovery trajectories; held-out-
+         site prediction.  results/recovery_clean/*.json (pilot, remote machine)  [TODO: plot]
   FIG 9  Real data hold-out.  [TODO]
   Supplement: settle-time bug and fix; integrator check table; per-teacher robustness;
               noise (E4); 12-parameter fits (E3).

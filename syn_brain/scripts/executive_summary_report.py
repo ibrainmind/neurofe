@@ -16,7 +16,7 @@ from syn_brain.core.report_style import H1 as _H1, H2 as _H2
 H1 = ParagraphStyle("h1k", parent=_H1, keepWithNext=1)
 H2 = ParagraphStyle("h2k", parent=_H2, keepWithNext=1)
 OUT = SYN_ROOT / "reports" / "executive_summary.pdf"
-DATE = "24 November 2026"
+DATE = "24 November 2026 (v3)"
 
 
 def T(rows, widths, cap, font=7.4):
@@ -25,9 +25,9 @@ def T(rows, widths, cap, font=7.4):
 
 def content():
     s = [P("syn_brain: where we are", TITLE),
-         P(f"Executive summary of the synthetic-brain identifiability work · {DATE} (v2) · "
-           "<b>Status:</b> single-node study closed with a validated recipe and posterior; network phase ready to "
-           "start in stages (section 6)", CAP)]
+         P(f"Executive summary of the synthetic-brain identifiability work · {DATE} · "
+           "<b>Status:</b> single-node study closed with a validated recipe and posterior; 10-node network pilot "
+           "passed; network gate (≥ 8 subjects) next", CAP)]
 
     # ------------------------------------------------------------------ verdicts
     s.append(P("Verdicts", H1))
@@ -49,23 +49,29 @@ def content():
         "the truth 96% of the time. One catch: a small systematic underestimate (−5.9% / −3.3%; 75% of estimates "
         "too low), most likely a \"winner's curse\" from picking the best of many restarts.", VERDICT_OK))
     s.append(P(
-        "<b>Where it still fails</b> → <b>Excitation-dominant states.</b> The corrected E/I map shows a single pulse "
-        "carries essentially no information there (bounds in the hundreds of thousands of percent), because the "
-        "excitatory interneurons saturate. Rich stimulation restores the bounds (18–24%), but backprop still misses "
-        "c1·c2 (~40% error). Near the quiet/active transition the model is bistable (hysteresis), and fits are "
-        "multi-modal.", BOX))
+        "<b>New: at 10 nodes, the global JR parameters are recoverable — including the coupling g and the "
+        "conduction velocity mu, which Phase 1 could not move.</b> → <b>Yes, in a pilot.</b> With the cleaned-up "
+        "fitting (log-scaled parameters, fractional delays, 8 stimulation sites × 3 amplitudes) and neurofe's own "
+        "coupling, one start recovers a, b, g, c3, c4, mu, k within 4% and c1·c2 within 17%, from starting errors up "
+        "to 96%. An independent earlier run with the same design agrees. Even with one site and one amplitude, most "
+        "parameters were recovered and held-out sites predicted within 2–8%. <b>So Phase 1 failed mainly because of "
+        "the fitting method, not the network.</b> Caveats: 1–2 subjects, no noise, teacher and student share code, "
+        "only whole-window prediction tested.", VERDICT_OK))
     s.append(P(
-        "<b>When to move to 10–20 nodes</b> → <b>Start now in two stages.</b> Stage 1 (now, ~days): the 10-node "
-        "Fisher analysis, which needs no fitting. Stage 2 (in ~1–2 weeks): the 10-node fitting study, once three "
-        "short single-node items are closed: the winner's-curse check, calibration in harder states, and a network "
-        "coupling that gives nodes background drive. Without that last item, every network node stays quiet and the "
-        "network study would only repeat the at-rest failure. 20 nodes follow only if 10 passes (section 6).", BOX))
+        "<b>Where it still fails</b> → <b>Excitation-dominant states</b> (single node: no information from a single "
+        "pulse; c1·c2 ~40% even with rich stimulation), the c1-vs-c2 split (never identifiable), and late-window "
+        "prediction (46–91% error for the single node; not yet tested for networks).", BOX))
+    s.append(P(
+        "<b>When to move to 20 nodes</b> → <b>After the 10-node gate, in ~1–2 weeks.</b> First: ≥ 8 random subjects "
+        "at 10 nodes with held-out-site and late-window tests, a more realistic teacher (finer time step + sensor "
+        "noise), and a Fisher check of per-edge gains (tier S2) at 10 nodes. Then 20 nodes at tier S1 — one change "
+        "at a time (section 6).", BOX))
     s.append(P("Decisions needed from William", H2))
     s += bullets([
-        "Approve the staged network plan (section 6), in particular adding background drive / rate-based coupling to "
-        "the network simulator before any 10-node fitting.",
-        "Approve the three remaining single-node checks (winner's curse, harder-state calibration, holdout-based "
-        "selection) as the gate for Stage 2.",
+        "Approve the 10-node gate design (section 6): ≥ 8 subjects, held-out-site and late-window tests, realistic "
+        "teacher (finer time step, sensor noise). Background-drive coupling is no longer a prerequisite.",
+        "Approve applying the cleaned-up fitting to real TMS-EEG (Ye's data) at tier S1: now the most informative "
+        "real-data test (section 6, step 5).",
         "Paper: a tentative draft exists (paper/draft_v0.txt); decide authorship and whether to involve the original "
         "method authors.",
     ])
@@ -129,126 +135,135 @@ def content():
                  "Yes, for identifiable combinations; not for individual c1"],
                 ["Practical fixes", "Ensembles, hard bounds, lowest-loss selection",
                  "Rich + many restarts + lowest loss works; hard bounds double the error"],
-                ["<b>Laplace posterior (new)</b>", "24 random teachers, honest (nominal) starts, rich protocol, "
-                                                   "p = 150", "<b>Median error 7.5% / 4.0%; 96% coverage of 90% "
-                                                              "intervals; −6% / −3% bias</b>"]],
+                ["Laplace posterior", "24 random teachers, honest (nominal) starts, rich protocol, p = 150",
+                 "Median error 7.5% / 4.0%; 96% coverage of 90% intervals; −6% / −3% bias"],
+                ["<b>Network plan N0–N1 (new)</b>", "Coupling option with background drive; 10-node Fisher bounds, "
+                                                    "8 sites × 3 amplitudes", "<b>Bounds < 3% for all parameters with "
+                                                                             "neurofe's own coupling; the new coupling "
+                                                                             "saturates at nominal g (bug found)</b>"],
+                ["<b>Network pilot N2 (new)</b>", "10 nodes, one subject, one start, both couplings",
+                 "<b>neurofe's coupling recovers everything but the c1/c2 split; the new coupling gets stuck</b>"]],
                [0.2, 0.38, 0.42], "Table 3. Studies and tests, chronologically (details in reports/DECISIONS.md).",
                font=7.0))
 
     # ------------------------------------------------------------------ scorecard
     s.append(P("3  The scorecard", H1))
     s.append(T([["Parameter", "Meaning", "Single pulse, rest", "Active (p = 150), rich protocol + recipe",
-                 "E-dominant active", "Network (expected)"],
-                ["k", "stimulation gain", "IDENTIFIABLE", "IDENTIFIABLE", "IDENTIFIABLE", "per site, if leadfield "
-                                                                                          "fixed"],
-                ["a", "excitatory time constant", "IDENTIFIABLE", "IDENTIFIABLE", "IDENTIFIABLE", "global"],
-                ["b", "inhibitory time constant", "WEAKLY", "IDENTIFIABLE", "WEAKLY", "weakly"],
+                 "E-dominant active", "Network, 10-node pilot"],
+                ["k", "stimulation gain", "IDENTIFIABLE", "IDENTIFIABLE", "IDENTIFIABLE", "recovered (pilot)"],
+                ["a", "excitatory time constant", "IDENTIFIABLE", "IDENTIFIABLE", "IDENTIFIABLE", "recovered (pilot)"],
+                ["b", "inhibitory time constant", "WEAKLY", "IDENTIFIABLE", "WEAKLY", "recovered (pilot)"],
                 ["c3·c4", "inhibitory loop", "NOT", "IDENTIFIABLE (4.0%, calibrated)", "WEAKLY (~20%)",
-                 "only with mean drive"],
+                 "recovered (pilot, ~2%)"],
                 ["c1·c2", "excitatory loop", "NOT", "IDENTIFIABLE (7.5%, calibrated)", "NOT (~40%)",
-                 "only with mean drive; hardest"],
-                ["c1…c4 alone", "which synapse", "NOT", "NOT", "NOT", "not"],
-                ["A, B, vmax", "PSP sizes, max rate", "NOT (symmetry)", "NOT", "NOT", "not"],
+                 "partly (pilot, −17% to −29%)"],
+                ["c1…c4 alone", "which synapse", "NOT", "NOT", "NOT", "c3, c4 yes; c1/c2 split no"],
+                ["A, B, vmax", "PSP sizes, max rate", "NOT (symmetry)", "NOT", "NOT", "not (fixed)"],
                 ["v0, r", "threshold, slope", "fix", "fix", "fix", "fix"],
-                ["g, w_bb, mu, leadfield", "network", "—", "—", "—", "g partly; edges / leadfield not; mu not"]],
+                ["g, mu", "coupling, conduction velocity", "—", "—", "—", "<b>recovered (pilot)</b>"],
+                ["w_bb, leadfield", "per-edge gains, read-out", "—", "—", "—", "untested (S2/S3)"]],
                [0.13, 0.15, 0.14, 0.24, 0.14, 0.2], "Table 4. Identifiability by state. 'Recipe' = rich protocol, "
                                                     "≥ 15 restarts, lowest-loss selection, Laplace interval; tested on "
-                                                    "24 well-behaved random subjects. Network column is a prediction.",
+                                                    "24 well-behaved random subjects. Network column: 10-node pilot "
+                                                    "(1–2 subjects, tier S1, no noise) — not yet the gate.",
                font=6.9))
     s.append(PageBreak())
 
     # ------------------------------------------------------------------ what it means
     s.append(P("4  What it means", H1))
     s += bullets([
-        "<b>The method as published cannot support claims about the local circuit</b>; the recipe can, in the right "
-        "brain state, and now with intervals that are honest about their uncertainty.",
-        "<b>The protocol is part of the measurement.</b> Rich stimulation doesn't just tighten bounds; it makes the "
-        "best fit also the most accurate fit. With a single pulse, the best fit can be the most wrong one.",
-        "<b>Brain state decides what is measurable.</b> Excitation-dominant columns hide their excitatory loop "
-        "(saturation); near the quiet/active transition the column is bistable and fits are multi-modal.",
-        "<b>Generalization failures in real data are expected from the published method itself</b>, so the method "
-        "and protocol come before modelling more of the brain.",
+        "<b>The published method's failures are mostly fixable method problems</b>: raw parameterisation, integer "
+        "delays, single-condition stimulation and single fits. With those fixed, a 10-node network recovers its global "
+        "parameters, including coupling and conduction velocity, in the clean synthetic case.",
+        "<b>Networks help, not hurt, global parameters.</b> Many stimulation sites probe the same shared parameters "
+        "from different angles, and strongly coupled neighbours receive large transient inputs that likely push them "
+        "into the nonlinear range a single quiet node never reaches (hypothesis, to check).",
+        "<b>The protocol is part of the measurement</b>, at both scales: rich, multi-condition stimulation makes the "
+        "best fit also the most accurate fit.",
+        "<b>What stays hard</b>: excitation-dominant states, the split between c1 and c2, and (single node) predicting "
+        "the late response. The late-window question is the open test for networks.",
+        "<b>Strategic consequence:</b> if a clean network fit works at R0, the real-data generalization failures "
+        "point to the published pipeline's choices (raw parameters, per-edge gains and fitted leadfield, single site) "
+        "or to model mismatch. Applying the cleaned-up fitting to real data is now the most informative next test.",
+    ])
+
+    # ------------------------------------------------------------------ review
+    s.append(P("5  Review of the new network results", H1))
+    s.append(P(
+        "The 10-node pilot changes the plan, so it was checked before being adopted here:"))
+    s += bullets([
+        "<b>Not a starting-point artifact.</b> The default teacher is drawn within ±50% of nominal and the student starts "
+        "at nominal: starting errors were up to 96% (g +91%, c1 +96%, b +49%, k −28%; c1·c2 +61%), and the initial "
+        "prediction error was 38%. Final errors of 0.1–4% are genuine recovery.",
+        "<b>Reproduced independently.</b> A run from 21 November with the same design (before the coupling option "
+        "existed) gives the same picture at 150 iterations: b, g, c3, mu, k recovered (progress ≈ 1); c1·c2 −29% and "
+        "still improving (pilot: −17% at 300).",
+        "<b>Single site also works, mostly.</b> Two runs with one site and one amplitude recovered most parameters and "
+        "predicted the 7 held-out sites within 2.0% and 8.1% (whole window); one subject's g stayed stuck (+62%).",
+        "<b>Not yet tested:</b> (1) late-window and temporal hold-out at network scale — the single node's main "
+        "failure; (2) a realistic teacher: teacher and student share code, time step and integrator, with no noise "
+        "(the 'inverse crime' CLAUDE.md requires avoiding or declaring); (3) more than 1–2 subjects; (4) tiers S2/S3, "
+        "which the published real-data pipeline uses.",
     ])
 
     # ------------------------------------------------------------------ next steps
-    s.append(P("5  Next steps", H1))
-    s.append(T([["#", "Step", "Why", "Effort", "Output"],
-                ["1", "Winner's-curse check: does the bias grow with the number of restarts? Fix by selecting on a "
-                      "held-out stimulation condition, or by averaging the best few restarts",
-                 "Removes a known, systematic error before anything is built on point estimates", "2–3 days",
-                 "Unbiased (or bias-corrected) recipe"],
-                ["2", "Calibration in harder states: E-dominant, near the fold, near oscillation", "Disease "
-                                                                                                    "mechanisms will "
-                                                                                                    "push subjects there",
-                 "3–5 days", "Map of where intervals can be trusted"],
-                ["3", "10-node Fisher spectrum (tiers S1, S2), no fitting", "Measures how many combinations a "
-                                                                           "network can identify", "1–2 days",
-                 "Identifiable count per tier; go/no-go for S2"],
-                ["4", "Network coupling with background drive (tonic p per node, or rate-based coupling), validated "
-                      "in the simulator", "Without it every network node is quiet and loops are invisible",
-                 "3–5 days", "Nodes in a stable active state; late TEP activity"],
-                ["5", "10-node fitting study (section 6)", "First real test at network scale", "1–2 weeks",
-                 "Network scorecard; calibration; hold-out tests"],
-                ["6", "Real-data gates: drug-response validity, test–retest, added value over plain TEP features",
-                 "Required before any product claim", "2–4 weeks each", "Go/no-go for product"],
-                ["7", "Paper: figures from existing results; network and real-data sections", "Publishable now in "
-                                                                                              "outline",
-                 "ongoing", "Submission-ready draft in ~6–10 weeks"]],
-               [0.04, 0.34, 0.27, 0.12, 0.23], "Table 5. Steps 1, 3 and 4 can run in parallel this week.", font=7.0))
-    s.append(PageBreak())
-
-    # ------------------------------------------------------------------ network timing
-    s.append(P("6  When to move to 10 or 20 nodes", H1))
-    s.append(P(
-        "The single node has now produced what a network study needs from it: a recipe that works in well-behaved "
-        "states and a calibrated posterior. What it has <i>not</i> settled can mostly be done in parallel. The one "
-        "real blocker is the network model itself: neurofe's coupling gives nodes no background drive, so in a "
-        "network every node rests in the quiet state where the loops cannot be seen. Fitting a network before fixing "
-        "that would repeat the single-node at-rest failure at much higher cost."))
-    s.append(T([["Stage", "When", "What", "Gate to continue"],
-                ["1  Structural, no fitting", "Now", "10-node Fisher spectrum for tiers S1 (global parameters) and "
-                                                     "S2 (+ per-edge gains), at rest and with background drive; "
-                                                     "single site vs several sites",
-                 "Know how many combinations are identifiable vs fitted"],
-                ["2  10-node fitting", "In ~1–2 weeks, after steps 1, 2, 4 of section 5",
-                 "Tier S1 + one coupling gain g + per-node or global drive; rich protocol at 2–4 stimulation sites; "
-                 "recipe + Laplace posterior; 10–20 random teachers; temporal and held-out-site tests",
-                 "Calibrated intervals (80–98% coverage); loop products within 20%; held-out site predicted"],
-                ["3  20 nodes", "Only if 10 nodes pass", "Same design; mainly more edges and compute",
-                 "Same gates; check that the identifiable count grows with data, not just with parameters"],
-                ["4  50 / 100 / 200 nodes", "Later", "Scaling per study/00_overview.md",
-                 "Above ~60 nodes there are more sources than the 62 EEG channels, so spatial identifiability "
-                 "changes; treat this as a separate question"]],
-               [0.17, 0.17, 0.38, 0.28], "Table 6. Staged network plan.", font=7.0))
-    s += bullets([
-        "<b>Why 10 before 20:</b> at 10 nodes a fitting epoch takes ~5 s and the per-edge tier has ~100 extra parameters "
-        "instead of ~400, so failures are cheap to diagnose. 20 nodes adds edges and compute, not a new question.",
-        "<b>Why stay below ~60 nodes first:</b> with fewer brain regions than EEG channels the read-out can in "
-        "principle separate the sources; above that it cannot, and identifiability changes for reasons unrelated to "
-        "the neural model.",
-        "<b>Start with tier S1 (global parameters + one coupling gain).</b> Per-edge gains (S2) and the fitted leadfield "
-        "(S3) are expected to be unidentifiable; Stage 1 will say how much S2 is worth.",
-        "<b>Several stimulation sites</b>: each site informs the connections leaving it; held-out-site prediction is "
-        "the network version of the temporal hold-out.",
-    ])
+    s.append(P("6  Next steps and the network timeline", H1))
+    s.append(T([["#", "Step", "Why", "Effort", "Gate / output"],
+                ["1", "10-node gate N2: ≥ 8 random subjects, tier S1, neurofe's coupling; held-out sites (train 6, "
+                      "test 2), late-window and temporal hold-out", "Turns the pilot into a result; tests the single "
+                                                                    "node's main failure at network scale",
+                 "3–5 days", "Median error < 20%; held-out sites predicted; late window reported"],
+                ["2", "Realistic teacher: neurofe-exact simulator at a 10× finer step + 0.42 µV sensor noise (R1)",
+                 "Removes the inverse crime; the single node showed integrator effects near transitions", "2–3 days",
+                 "Same gate under realistic data"],
+                ["3", "Network ensemble + Laplace posterior (port the single-node calibration)",
+                 "Honest uncertainty at network scale", "3–5 days", "90% intervals cover 80–98%"],
+                ["4", "Fisher check of tier S2 (per-edge gains) at 10 nodes", "Decide whether per-edge gains are "
+                                                                              "worth fitting at all",
+                 "1–2 days", "Identifiable count for S2"],
+                ["5", "Cleaned-up fitting on real TMS-EEG (Ye's data), tier S1, with Ye's hold-out tests",
+                 "If held-out sites now transfer, the published pipeline's choices were the problem; if not, model "
+                 "mismatch is", "1–2 weeks", "Real-data cross-site and temporal hold-out"],
+                ["6", "Single-node loose ends: winner's-curse bias, calibration in harder states", "Lower priority "
+                                                                                                  "now; still needed "
+                                                                                                  "before disease work",
+                 "1 week", "Bias-corrected recipe"],
+                ["7", "Paper: draft exists (paper/draft_v0.txt); add the network section", "The network result "
+                                                                                           "strengthens it", "ongoing",
+                 "Submission draft"]],
+               [0.04, 0.36, 0.27, 0.11, 0.22], "Table 5. Steps 1, 2 and 4 can start now in parallel.", font=7.0))
+    s.append(T([["Stage", "When", "What"],
+                ["10 nodes, tier S1", "<b>Now</b> (pilot passed)", "Steps 1–3 above"],
+                ["10 nodes, tier S2", "After step 4's Fisher check", "Per-edge gains; separately from node count"],
+                ["20 nodes, tier S1", "<b>In ~1–2 weeks</b>, once the 10-node gate passes",
+                 "Same design; change one thing at a time"],
+                ["50 / 100 / 200 nodes", "Later", "Above ~60 nodes there are more sources than the 62 EEG channels; "
+                                                 "treat as a separate question"],
+                ["Disease markers (Part B)", "After the network gate and the single-node loose ends",
+                 "Resume with a tested recovery method"]],
+               [0.2, 0.3, 0.5], "Table 6. When to scale.", font=7.2))
+    s.append(P("Background-drive coupling is no longer a prerequisite: with neurofe's own coupling the pilot already "
+               "recovers the loop parameters, while the new coupling got stuck in a poor solution from a single start "
+               "(it may still help with restarts or for teacher realism; secondary track)."))
 
     # ------------------------------------------------------------------ product
     s.append(P("7  Product-driven view: clinical and wellness", H1))
     s += bullets([
-        "<b>Not productizable:</b> a per-patient \"digital twin\" or full JR parameter map; claims about specific "
-        "synapses; network connection maps.",
-        "<b>Stronger than a week ago — candidate A, a TMS-EEG excitability / inhibition profile.</b> Response gain, "
-        "excitatory and inhibitory time constants, and now inhibitory and excitatory loop strengths <i>with calibrated "
-        "intervals</i>, measured with a defined rich protocol in an active state. Still to prove: drug-response "
-        "validity, test–retest, added value over plain TEP features. Caveat: excitation-dominant states, often the "
-        "clinically interesting ones, remain the weak spot for the excitatory loop.",
-        "<b>B, protocol-design software</b> (which stimulation makes a marker identifiable): near-term, low "
-        "regulatory burden; the rich-protocol and E/I results are its core.",
-        "<b>C, MRI + TMS-EEG for early PD:</b> far; depends on the network stage and subcortical modelling.",
-        "<b>D, wellness from resting EEG (no TMS):</b> untested; resting-state identifiability is still open.",
+        "<b>Not productizable:</b> a per-patient \"digital twin\"; claims about specific synapses (c1 vs c2); per-edge "
+        "connection maps (untested, expected unidentifiable).",
+        "<b>Candidate A — a TMS-EEG excitability / inhibition profile — got stronger again.</b> Global quantities "
+        "(response gain, excitatory and inhibitory time constants, loop strengths, and now network coupling and "
+        "conduction velocity) appear recoverable from a <b>multi-site, multi-intensity</b> protocol, with calibrated "
+        "intervals at the single-node level. Multi-site TMS-EEG within one session is feasible in practice, so the "
+        "protocol can be part of the product. Still to prove on real data: hold-out transfer, drug-response validity, "
+        "test–retest, added value over plain TEP features.",
+        "<b>B, protocol design</b> (which sites and intensities make a marker identifiable): near-term, low regulatory "
+        "burden; the network Fisher tools now support it directly.",
+        "<b>C, MRI + TMS-EEG for early PD:</b> far; needs subcortical modelling. <b>D, wellness from resting EEG:</b> "
+        "untested.",
         "<b>Clinical vs wellness:</b> clinical needs validity, reliability and added value on patient data, then "
-        "medical-software clearance; start as a research and pharma tool. Wellness avoids diagnostic claims but "
-        "needs the resting-state question answered first.",
+        "medical-software clearance; start as a research and pharma tool. Wellness avoids diagnostic claims but needs "
+        "resting-state identifiability first.",
         "<b>Design principle:</b> report only identifiable quantities, with intervals, with the protocol that makes "
         "them identifiable, and say \"not determined\" when the data don't decide.",
     ])
@@ -256,19 +271,21 @@ def content():
     # ------------------------------------------------------------------ housekeeping
     s.append(P("8  Open issues and housekeeping", H1))
     s += bullets([
-        "Winner's-curse bias in the recipe (section 5, step 1).",
-        "Teacher realism: synthetic TEPs lack late activity until background drive is added (same fix as step 4).",
-        "Phase spec files (study/phaseN_*.md) were never written; worth writing for the network phase.",
-        "Misspecification rungs R2–R6 are declared but not built; R0–R1 only so far.",
-        "Integrator caveat near oscillation boundaries (neurofe's 0.1 ms Euler step).",
+        "Network results so far are R0 (matched teacher, no noise); CLAUDE.md asks for a finer-step, different-"
+        "integrator teacher with noise unless a spec says 'matched' (step 2).",
+        "The new coupling option saturates neurofe's input bound (500) at nominal g; any use needs g ≈ 100–120.",
+        "Winner's-curse bias in the single-node recipe; harder-state calibration (step 6).",
+        "Phase spec files (study/phaseN_*.md) were never written; docs/network_study_plan.txt now serves for the "
+        "network phase.",
+        "Misspecification rungs R2–R6 not built; integrator caveat near oscillation boundaries.",
         "Results and logs live on the machines that produced them, not in git.",
     ])
     s.append(P("How this summary could be wrong", H2))
     s += bullets([
-        "The calibration result covers 24 well-behaved subjects at one safe operating point; harder states are "
-        "untested (step 2).",
-        "The network column and the product views are predictions and opinions, not measurements; Stages 1–2 and "
-        "the real-data gates are designed to test them.",
+        "The network result rests on 1–2 subjects with a matched, noise-free teacher and whole-window metrics; it "
+        "could weaken with realistic data or on the late window (steps 1–2 test exactly this).",
+        "The single-node calibration covers 24 well-behaved subjects at one safe operating point; harder states are "
+        "untested. Product views are opinions, not measurements.",
     ])
     return s
 
