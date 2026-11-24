@@ -1,0 +1,486 @@
+NETWORK-SCALE STUDY PLAN: FROM ONE JR NODE TO A 10-20 NODE NETWORK
+===========================================================================
+
+Status     : proposed, 2026-11-24
+Builds on  : the single-node study (E1-E12, bifurcation_followup.pdf,
+             single_node_conclusions.pdf, ei_balance_bifurcation_map.pdf,
+             jr_parameters_explainer.pdf) and the Phase 1 network gate
+             (syn_brain/README.md, "Phase 1 results"), which failed.
+Executive summary : syn_brain/reports/executive_summary.pdf, section 5,
+             step 3 ("Fisher spectrum of the 10-node network (S1, S2)")
+
+
+1. WHY THIS PLAN
+----------------
+
+Phase 1 already tried a 10-node network (tier S1, neurofe's real JansenRit.fit)
+and failed: only k was recovered; mu got no gradient at all (delays are cast
+to integers); g, c1, c2 stayed at their starting values (gradients ~1e-6,
+~1e4x smaller than a or k); b, c4, std_in converged to the SAME value
+regardless of the teacher's truth (they absorb mismatch, carry no
+information). That failure was diagnosed, not explained away, by the
+single-node study that followed it:
+
+  * neurofe's raw parameterisation (Adam, lr 0.05) is a large, avoidable part
+    of the failure on its own: log-scaled parameters reach ~250x lower loss
+    on identical single-node data (single_node_tms_study.pdf).
+  * c1, c2, c3, c4 are not identifiable INDIVIDUALLY in this model class, by
+    construction (section 2, single_node_study_plan.txt) -- no amount of
+    network-level data changes that; only the products c1*c2, c3*c4 can ever
+    be recovered, and only when the node is in an engaged (firing) state.
+  * neurofe's long-range coupling is a zero-mean Laplacian
+    (g*sum w_ij*(E_j(t-d_ij) - E_i)); with no mean input anywhere, every node
+    rests in the inactive, near-linear state where the E-I loop is invisible
+    (docs/background_drive_note.txt). This is likely why b, c4 (which only
+    carry information when the loop is engaged) collapsed to arbitrary values
+    in Phase 1: the loop was never engaged for any node, in any condition.
+  * Pushing a single node into the firing state recovers c3*c4 and, more
+    inconsistently, c1*c2 -- but only with a richer stimulus (paired-pulse,
+    train, E+I injection), an ensemble of restarts selected by lowest loss,
+    and ideally a Laplace posterior rather than a point estimate
+    (single_node_conclusions.pdf sections 5-6, validated on 24 teachers).
+  * mu's delay cast is not a Phase-1-only accident: it is in neurofe's real
+    forward pass (neurofe/models/jansen_rit.py) and is mirrored exactly in
+    syn_brain/core/simulator.py (the exact-equivalence teacher). It is,
+    however, ALREADY FIXED in a parallel, not-yet-used simulator,
+    syn_brain/core/diffsim.py, via fractional delays (linear interpolation
+    of the history buffer) -- built, but never wired into a training run.
+
+In short: Phase 1's failure is now understood to be mostly a METHOD failure
+(raw parameterisation, no mean drive, non-differentiable mu, single-pulse
+stimulus, single point estimate), not evidence that network-scale JR
+parameters are inherently unrecoverable. This plan re-attempts the network
+with every one of those fixes in place, in small, gated steps, rather than
+re-running the same failed recipe at a larger scale.
+
+
+2. WHAT IS ALREADY BUILT, AND WHAT IS MISSING
+----------------------------------------------
+
+More is already built than first thought -- a parallel effort (same one behind
+jr_parameters_explainer.pdf and executive_summary.pdf) has already built a
+second-generation network pipeline on top of diffsim.py, independent of
+neurofe's real JansenRit.fit. Revised inventory, corrected after reading that
+code directly (not just the executive summary's description of it):
+
+  Already built                          Where                   Status
+  --------------------------------------  ----------------------  -----------
+  Fractional/differentiable delays        core/diffsim.py          built, ON
+    (mu gets a real gradient)             :integer_delays=False    by default
+  Log-scaled parameterisation             core/diffsim.py :38-46   built, used
+    (theta = nominal * exp(z))
+  Non-diffusive coupling                  core/diffsim.py          ADDED this
+    (g*sum w_ij*S(E_j), the fix this      :coupling_mode=          session
+    plan calls for)                       "non_diffusive"          (N0.1)
+  Exact network teacher (matches          core/simulator.py        built, used
+    neurofe's forward to float precision) tests/test_simulator.py  as the
+                                                                   Phase 1
+                                                                   teacher
+  A clean fitting loop on diffsim.py      core/fitting.py          built
+    (log-scale, fractional delays,
+    full-window loss, multi-condition)
+  10/20/50/...-node sub-networks          core/anatomy.py          built
+    (even subsample of the real SC,       load_anatomy(n_nodes)
+    distances, leadfield)
+  Tiers S1 (global+k) / S2 (+w_bb) /      core/params.py :98-122   built
+    S3 (+leadfield)
+  "Step 1" Fisher/CRB sweep, 10 nodes,    scripts/identifiability  built --
+    multi-site x multi-amplitude          .py                     this is
+    protocols, exactly Part N1 below                               Part N1
+  "Step 2/3/4" clean-recovery gate, 10    scripts/recover_clean    built --
+    nodes: draws a teacher, fits a        .py                     covers most
+    subset of (site, amplitude)                                   of N0.3/N2,
+    conditions, measures generalisation                            but ONE
+    to held-out ones, ablation flags for                           start, no
+    integer-delays / grad-warmup                                   ensemble
+  Validated single-node recipe: RICH      scripts/single_node_tms  built
+    stimulus, >=20 restarts + lowest      .py, scripts/laplace_
+    loss, Laplace posterior               calibration.py
+
+  Still missing                           Needed for               Priority
+  --------------------------------------  -----------------------  --------
+  Wiring coupling_mode through            testing the coupling     first
+    identifiability.py and                fix with the EXISTING
+    recover_clean.py (both currently      Fisher sweep and
+    call ds.run() without it, so both     recovery gate, not a
+    have only ever run the zero-mean      new parallel pipeline
+    Laplacian)
+  An ensemble (>=15-20 restarts) +        avoiding the exact        second
+    lowest-loss wrapper around            single-run unreliability
+    recover_clean.py / core/fitting.fit   the single-node study
+                                          found and fixed
+  Multi-pulse-type ("RICH") stimulation:  loop-gain identifiability third
+    diffsim.Protocol currently has ONE
+    shared pulse window (start, stop)
+    per Protocol -- paired-pulse and
+    train need either several Protocol
+    calls summed into one loss, or a
+    Protocol extension to multiple
+    pulse epochs per condition
+  A network-level Laplace/calibration     honest uncertainty at    fourth
+    wrapper (mirrors scripts/              network scale, not a
+    laplace_calibration.py)                silent point estimate
+
+Revised conclusion: Part N0 is now mostly WIRING AND RUNNING the existing
+identifiability.py / recover_clean.py pipeline with the new coupling_mode,
+plus adding the ensemble wrapper -- not building a new pipeline from scratch.
+
+
+3. PART N0: BUILD THE HARNESS (no network results yet)
+-------------------------------------------------------
+
+Aim
+  Make it possible to fit a network with every single-node lesson applied,
+  before spending any compute on a network-scale measurement.
+
+Tasks (revised after finding core/fitting.py, scripts/identifiability.py and
+scripts/recover_clean.py already built -- see section 2)
+  N0.1  DONE this session: added a non-diffusive coupling path to
+        core/diffsim.py (coupling_mode="non_diffusive" alongside the
+        existing default "laplacian"), of the form
+        g * sum_j w_ij * S(E_j(t - d_ij)): neighbours send firing rates,
+        which are positive, so a node's mean drive grows with g and its
+        in-degree. core/simulator.py (the exact-equivalence teacher) is
+        untouched and stays exact.
+  N0.2  DONE this session. 3-node tonic-drive-only scan (no stimulation):
+        g=0 -> resting E-I = -1.861 mV (matches the single-node rest
+        baseline exactly); g=200 -> +5.978 to +5.996 mV (at/above v0=6 mV,
+        engaged). 10-node scan: nominal g=1000.01 -> E-I=6.023 mV (fully
+        engaged) with ZERO oscillation amplitude at every tested g
+        (180-400) over a 9 s window -- no hysteresis/oscillation risk from
+        the coupling fix itself at this network size, for this teacher.
+        Gate PASSED.
+  N0.3  DONE this session, with one correction found and fixed along the
+        way. coupling_mode is now threaded through both
+        scripts/identifiability.py and scripts/recover_clean.py (plus a
+        --g-override flag on both, see below). The correction: nominal
+        g=1000.01 -- calibrated for the self-cancelling Laplacian -- makes
+        g*coupling reach 2000-5000 under non_diffusive coupling, which
+        SATURATES the U_BOUND=500 safety clip in core/diffsim.py's
+        step_ms (tanh(rE/U_BOUND)*U_BOUND) and silently kills gradients.
+        This is exactly the kind of harness bug N0.3 existed to catch
+        before it was mistaken for a network-level finding (see risk list,
+        section 8). Fixed by exposing --g-override and sweeping it (N1,
+        below) to find an operating point that engages the network without
+        saturating.
+        STILL OPEN: the >=15-20 restart ensemble wrapper (nominal-centered,
+        lowest-loss) is not yet built; N2 below used ONE start per teacher
+        as a first pilot, same limitation the single-node study had before
+        E9-E12 added the ensemble. Build this next if N2's single-start
+        pilot looks promising but noisy.
+  N0.4  Multi-condition stimulation per site: identifiability.py and
+        recover_clean.py already support multiple SITES and AMPLITUDES
+        (the easy two-thirds of "RICH"). Paired-pulse and train still need
+        either several diffsim.Protocol calls summed into one loss, or an
+        extension of Protocol to multiple pulse epochs per condition --
+        scope this only if N1/N2 below show multi-amplitude alone is not
+        enough (it was NOT enough at the single-node level either).
+
+Gate to leave N0
+  The new coupling engages the loop in the tiny sanity check (N0.2) without
+  uncontrolled oscillation; identifiability.py and recover_clean.py run
+  end-to-end with coupling_mode="non_diffusive" and produce sensible
+  (non-NaN, non-exploding) output, as a check that the harness itself
+  introduces no new bugs before trusting it for the Part N1/N2 measurements.
+
+
+4. PART N1: FISHER/CRB SPECTRUM, 10 NODES, TIER S1 (measure, don't guess)
+---------------------------------------------------------------------------
+
+Aim
+  Exactly executive_summary.pdf's step 3: before spending any training
+  compute, measure which parameter combinations are even in principle
+  identifiable in a 10-node network, the cheap way (Jacobians only, no
+  optimisation) -- matching how every single-node identifiability claim in
+  this study was first checked with Fisher/CRB before backprop.
+
+Design
+  Reuse scripts/identifiability.py as-is (already builds a 10-node
+  sub-network, tier S1 -- global a,b,g,c1-c4,k,mu -- and a bank of
+  multi-site/multi-amplitude protocols, 1-8 sites), adding only the
+  coupling_mode="non_diffusive" flag from N0.3. Compute CRB for every
+  global parameter and, in post-processing, for the identifiable
+  combinations (c1*c2, c3*c4) exactly as in analyse() for the single node.
+
+Measurements
+  1. Does mu now get a non-degenerate Fisher entry (nonzero, well-conditioned
+     row/column), confirming the fractional-delay fix actually matters, not
+     just compiles?
+  2. Do the single-node-identifiable combinations (k, a, conditionally
+     c3*c4) survive embedding in a network, or does shared input across
+     nodes add new degeneracies (e.g. a node's own c1*c2 confounded with its
+     neighbours' via g)?
+  3. Run once with the new coupling OFF (Laplacian only) and ON
+     (non-diffusive), same network and sites, to directly measure how much
+     the coupling fix matters -- the network analogue of the single-node
+     tonic-drive sweep.
+  4. Repeat at tier S2 (release w_bb) to measure how much adding per-edge
+     connectivity degrades single-node-level identifiability, before ever
+     training S2.
+
+Gate to leave N1
+  At least k, a, and one loop-gain combination (c3*c4) show a CRB bound
+  under 20% at tier S1 with the coupling fix on, for at least one
+  stimulation design. If NOTHING survives even in the Fisher/CRB best case,
+  stop here and report it as a finding (no point training), rather than
+  spending backprop compute on a result already ruled out analytically --
+  this mirrors how Part A of the single-node study plan used Fisher sweeps
+  as a gate before any training.
+
+RESULTS (measured this session, nominal teacher, 10 nodes, tier S1, "8
+sites, 3 amplitudes" -- the richest built-in protocol)
+
+  CRB relative SE, %, by coupling mode / g:
+
+  param  Laplacian  non_diff   g=300  g=200  g=150  g=120  g=100  g=70  g=50
+         (g=1000)   g=1000
+  a      0.013      0.096      0.096  0.098  0.098  0.095  0.1    0.12  0.13
+  b      0.58       0.5        0.64   0.81   0.87   0.8    0.64   1.2   1.3
+  g      0.0033     130        5.3    3.1    2.3    1.6    0.68   1.6   2.4
+  c1     2.5        1100       15     7.8    4.7    1.8    1.1    5     5.5
+  c2     0.15       1400       40     20     12     3.4    1.9    6.3   7.7
+  c3     1.1        1.7        2      2.5    2.5    1.3    0.56   4.2   10
+  c4     2.7        3.6        4.2    5.3    5.2    2.9    1.7    9.8   22
+  mu     0.003      35         22     16     16     5      0.93   1.9   2.8
+  k      0.07       0.089      0.088  0.088  0.088  0.088  0.087  0.092 0.092
+
+  Gate PASSED, comfortably, for BOTH coupling modes at their respective
+  best operating points -- a different and more positive situation than
+  the single-node study ever found.
+
+  Three findings, in order of how much they revise this plan's premise:
+
+  1. non_diffusive g=1000.01 (the teacher's own nominal value) is
+     CATASTROPHIC, not just suboptimal: g, c1, c2, mu all blow out to
+     35-1400% relative SE. Root cause confirmed by direct computation, not
+     inferred: per-node g*coupling reaches 2000-5000 at this g, against
+     U_BOUND=500 -- the tanh clip saturates and the gradient through that
+     pathway is ~zero. This is the N0.3 bug described above, not a
+     property of the non-diffusive idea itself.
+  2. Once g is brought into a non-saturating range, non_diffusive has a
+     clear interior sweet spot at g~=100-120: every parameter is under ~2%
+     (mu=0.93%, the long-standing Phase-1 blind spot, and g itself=0.68%,
+     both excellent). Degradation runs in OPPOSITE directions on either
+     side -- g>=150 re-approaches saturation (g, c1, c2, mu degrade); g<=70
+     under-engages the network (c3, c4 degrade sharply instead: c4 goes
+     1.7%->22% from g=100 to g=50). This mirrors the single-node
+     quiet/saturated bifurcation story, but for the coupling's own gain,
+     not stimulus amplitude.
+  3. UNEXPECTED, and the one that most changes this plan's framing: the
+     existing Laplacian (rest, zero mean drive -- what Phase 1 actually
+     used) is ALREADY excellent at network scale for every parameter
+     (worst case c4=2.7%), including mu (0.003%) and g (0.0033%) -- better
+     than non_diffusive's own best g=100 row for a,b,g,c2,mu,k, and only
+     somewhat behind it for c1,c3,c4. This is NOT the single-node story,
+     where rest-state c1-c4 bounds were 56-250% with one pulse. The
+     likely reason: "8 sites, 3 amplitudes" is 24 largely-independent
+     conditions, each probing the SAME global parameters from a different
+     anatomical angle (site location, conduction delay) -- pooling many
+     diverse conditions can constrain a shared global parameter even
+     without any single node individually in a special operating regime.
+     This does NOT mean Phase 1 should have succeeded at rest: Phase 1
+     failed with this exact Laplacian coupling, using neurofe's real
+     JansenRit.fit. The gap between "CRB says rest is fine" and "Phase 1's
+     real backprop got stuck at rest" is now the single most important
+     open question this plan has to resolve -- it is the reason N2 (next
+     section) runs BOTH coupling modes side by side rather than assuming
+     the coupling fix is necessary. Candidate non-coupling explanations
+     for Phase 1's failure that N2 should help separate from "needs mean
+     drive": raw (non-log) parameterisation, integer delays, single-pulse/
+     single-site stimulus, and a single point estimate with no restarts --
+     all FOUR of which the single-node study independently showed matter,
+     and all four of which N0.3's harness fixes regardless of coupling
+     mode.
+
+
+5. PART N2: BACKPROP + ENSEMBLE + LAPLACE PILOT, 10 NODES, TIER S1
+---------------------------------------------------------------------------
+
+Aim
+  Test whether the combinations N1 says survive in principle actually
+  recover in practice, the way single-node E9-E12 and the Laplace
+  calibration tested CRB against real optimisation.
+
+Design
+  Same 10-node network, same sites/protocol as N1, coupling fix on. For each
+  of several (8-15, compute allowing) independently-drawn random teachers
+  (not just the nominal network): fit with the N0.3 harness (>=20 restarts,
+  lowest loss selected, nominal-centered starts), then compute a Laplace
+  posterior and check 90% interval coverage, exactly as
+  scripts/laplace_calibration.py did for the single node.
+
+Pass criteria (fix before running, do not adjust after seeing results)
+  * Point estimate: median |error| < 20% for k, a, and c3*c4, across
+    teachers.
+  * Calibration: 90% credible interval holds the truth 80-98% of the time
+    (same band used for the single-node Laplace check).
+  * mu: at minimum, moves in the right direction and away from its random
+    start (progress > 0 in the single-node study's sense) -- a much weaker
+    bar than full identifiability, since this is the first time mu has ever
+    had a gradient to work with.
+  * No sustained, uncontrolled oscillation introduced by the new coupling in
+    any of the fitted networks (reuse the plateau-vs-decay check from
+    ei_balance_bifurcation_map.pdf, not a single simulation window).
+
+Interpreting results
+  Passes                 -> proceed to Part N3 (scale up).
+  Fails only on mu        -> fractional delays were necessary but not
+                             sufficient (e.g. too few sites probe conduction
+                             time); report as a specific, narrower finding,
+                             do not block the rest of tier S1.
+  Fails broadly           -> diagnose like the single-node study did:
+                             Fisher-good-but-backprop-bad means a landscape
+                             problem (try more restarts, or the continuation
+                             trick); Fisher-bad-too means a genuine new
+                             network-level degeneracy, which is itself the
+                             finding (what question C1-C10 in the original
+                             single_node_study_plan.txt, or a dedicated
+                             network Part C, should target next).
+
+PILOT RESULT (measured this session, ONE teacher, ONE nominal-centered start,
+300 iterations, full 8-site x 3-amplitude design used for training -- a
+pilot, not yet the >=8-teacher gate above):
+
+  Laplacian (rest coupling, Phase 1's own, unchanged): loss drops cleanly
+  0.11 -> 5.5e-6. Recovery: a +0.1%, b -0.2%, g +0.6%, c3 +2.2%, c4 -3.7%,
+  mu -0.2%, k -0.0%. c1*c2 = -16.5%, c3*c4 = -1.6% (both under the 20%
+  single-node target). Train rel. RMSE 0.0036 (from a start of 0.383).
+
+  Non_diffusive, g=100 (N1's own CRB "sweet spot"): loss PLATEAUS at
+  ~7.5e-3 by iteration 60 and never moves again (train rel. RMSE only
+  0.128, ~35x worse than Laplacian's). Recovery: g +114%, c1 +141%,
+  c2 +168%, c3 -44.6%, c4 +84.4%, mu -33%. c1*c2 = +547% (catastrophic);
+  c3*c4 happens to land near truth (+2.1%), likely by drifting along the
+  known c3/c4 degenerate direction rather than actually being constrained.
+
+  This resolves N1's flagged open question in the OPPOSITE direction from
+  what motivated adding the coupling fix: the Laplacian coupling recovers
+  essentially everything from a single start, no ensemble needed, once the
+  other N0.3 harness fixes are in place (log-scaled parameters, fractional
+  delays, rich multi-site/multi-amplitude design). This strongly suggests
+  Phase 1's real failure was never about missing mean drive -- it was the
+  four OTHER things the single-node study already found matter (raw
+  parameterisation, integer delays, single-pulse/single-site stimulus, no
+  restarts), all already fixed here, none touching the coupling term.
+  Non_diffusive coupling, even at its CRB-favoured g, gets stuck in a bad
+  basin from one start -- a Fisher-good-but-landscape-bad failure, same
+  pattern as single-node c1*c2 at a bad operating point. The missing N0.3
+  ensemble/restart wrapper is the natural next check on non_diffusive
+  before concluding it is unusable, not proof that it is.
+
+  REVISED PRIORITY: run the real N2 gate (>=8 teachers) with the Laplacian
+  coupling FIRST (cheap: already works from one start, no new wrapper
+  needed) rather than building the ensemble wrapper and re-testing
+  non_diffusive first, as section 2's inventory originally ordered it.
+  non_diffusive coupling is now a secondary, lower-priority track: revisit
+  only if Laplacian's >=8-teacher result exposes a problem a non-zero mean
+  drive would plausibly fix (e.g. a parameter that is fine for this one
+  teacher but fails across the broader teacher population), or once the
+  ensemble wrapper exists for unrelated reasons (single-node still needs it
+  too).
+
+
+6. PART N3: SCALE UP (only after N2 passes)
+----------------------------------------------
+
+Aim
+  Decide the next axis to extend on, using N1-style Fisher sweeps to choose
+  BEFORE training, not by guessing.
+
+Options, in the order the executive summary's own prediction (Table 4)
+suggests trying them
+  N3.a  Tier S2 (release per-edge w_bb) at 10 nodes first -- expected to be
+        the harder addition (per-edge connectivity, not more nodes).
+  N3.b  20 nodes at tier S1 -- only once S2-at-10 has an N1-style Fisher
+        sweep run, so node count and tier are not both changed at once.
+  N3.c  Disease-marker mechanisms (B1-B7 from single_node_study_plan.txt
+        Part B) applied network-wide, now that a node can be pushed to an
+        engaged state and the loop gains have a tested recovery method --
+        this is the natural point to resume Part B, which was paused
+        pending exactly this.
+
+Do not combine N3.a and N3.b in one run: if a combined S2-20-node attempt
+fails, it will not be possible to tell whether tier or scale was the cause.
+
+
+7. PASS CRITERIA SUMMARY (TO AGREE BEFORE RUNNING)
+------------------------------------------------------
+
+  N0  coupling fix engages >=1 node's loop in the tiny sanity check without
+      uncontrolled oscillation; new harness reproduces the single-node E9
+      result to within its own error bars.
+  N1  CRB bound < 20% for k, a and at least one loop-gain combination at
+      tier S1, coupling on, for at least one stimulation design.
+  N2  median point-estimate error < 20% and 90% credible interval coverage
+      80-98%, for the combinations N1 flagged, across >=8 independent
+      teachers; mu shows nonzero progress; no uncontrolled oscillation.
+  N3  decided by N1-style Fisher sweeps at the new scale/tier, not before.
+
+
+8. RISKS
+------------
+
+  The non-diffusive coupling engages the loop but also makes the network
+  bistable or oscillatory at the scale of the whole network, not just one
+  node
+      -> N0.2's tiny-scale sanity check first, using the two-window /
+         equilibria-style stability check (not a single simulation window),
+         is specifically there to catch this before 10+ nodes.
+  Fractional delays fix mu's gradient but mu is still practically
+  unidentifiable (e.g. too few sites span a useful range of conduction
+  times)
+      -> N1 measures this analytically before any training; if the Fisher
+         bound on mu is poor even with the gradient fixed, that is itself
+         the (negative) finding, not a bug to chase.
+  Network-scale compute is much larger than single-node (more parameters,
+  more conditions, more restarts x teachers)
+      -> N1 (Fisher only) is deliberately cheap and gates N2 (training);
+         N2 itself stays at 10 nodes / tier S1 / 8-15 teachers, the smallest
+         design that can still produce a believable calibration check,
+         before any tier or node-count increase.
+  diffsim.py's fixes were built for a different purpose and may have
+  untested edge cases at network scale (e.g. fractional-delay interpolation
+  at very short delays, or interactions between log-scaled parameters and
+  the new coupling term)
+      -> N0.3's unit test (reproduce the single-node E9 result) is there
+         specifically to catch harness bugs before they are mistaken for
+         network-level findings.
+
+
+9. FILES
+------------
+
+  syn_brain/docs/network_study_plan.txt   this plan
+  syn_brain/core/diffsim.py               fractional delays + log-scaled
+                                          parameters (built) + non-diffusive
+                                          coupling (added this session, N0.1)
+  syn_brain/core/fitting.py               clean fitting loop on diffsim.py
+                                          (built; single-start -- N0.3 wraps
+                                          it with an ensemble)
+  syn_brain/core/simulator.py             exact-equivalence network teacher
+                                          (unchanged; stays a faithful mirror
+                                          of neurofe's real forward pass)
+  syn_brain/core/anatomy.py               10/20-node sub-network loader
+                                          (unchanged)
+  syn_brain/core/params.py                tiers S1/S2/S3 (unchanged)
+  syn_brain/scripts/identifiability.py    Fisher/CRB sweep, 10 nodes, tier S1,
+                                          multi-site/multi-amplitude (built;
+                                          this IS Part N1, needs coupling_mode
+                                          threaded through, N0.3)
+  syn_brain/scripts/recover_clean.py      clean-recovery gate, 10 nodes
+                                          (built; this is most of Part N2,
+                                          needs coupling_mode + the N0.3
+                                          ensemble wrapper)
+  syn_brain/scripts/single_node_tms.py    pattern already followed by
+                                          identifiability.py/recover_clean.py;
+                                          reference for the N0.3 ensemble
+                                          wrapper and any RICH-protocol
+                                          extension (N0.4)
+  syn_brain/scripts/laplace_calibration.py pattern to port for the N2/N0.3
+                                          Laplace wrapper
+  syn_brain/reports/executive_summary.pdf step 5 (next steps), step 3 is
+                                          this plan's Part N1
+  syn_brain/reports/single_node_conclusions.pdf  validated recipe this plan
+                                          re-applies at network scale
+  syn_brain/reports/jr_parameters_explainer.pdf  equilibria()-style
+                                          stability check to reuse for N0.2

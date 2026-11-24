@@ -80,10 +80,19 @@ def main():
     ap.add_argument("--n-nodes", type=int, default=10)
     ap.add_argument("--h", type=float, default=1e-4, help="finite-difference step in log space")
     ap.add_argument("--sigma", type=float, default=REAL_BASELINE_STD_UV)
+    ap.add_argument("--coupling-mode", default="laplacian", choices=["laplacian", "non_diffusive"],
+                    help="laplacian = neurofe's zero-mean coupling (default); non_diffusive = "
+                         "g*sum w_ij*S(E_j), gives nodes a non-zero mean drive (network_study_plan.txt N0.1)")
+    ap.add_argument("--g-override", type=float, default=None,
+                    help="use this g instead of the teacher's own value -- nominal g=1000 is "
+                         "calibrated for the self-cancelling Laplacian and saturates U_BOUND "
+                         "under non_diffusive coupling (network_study_plan.txt N0.2)")
     ap.add_argument("--threads", type=int, default=1)
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
     tag = f"t{args.teacher}" if args.teacher != "nominal" else "nominal"
+    tag += "" if args.coupling_mode == "laplacian" else f"_{args.coupling_mode}"
+    tag += "" if args.g_override is None else f"_g{args.g_override:g}"
     log = get_logger(f"identifiability_{tag}")
     out_dir = RESULTS_DIR / "identifiability"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +102,8 @@ def main():
         truth = nominal_effective()
     else:
         truth = draw_teacher(anat.n_nodes, seed=int(args.teacher), spread=args.spread).effective
+    if args.g_override is not None:
+        truth = dict(truth); truth["g"] = args.g_override
     sites = pick_sites(anat, N_SITES, seed=0)
     ki = np.stack([site_weights(anat, int(s))[:, 0] for s in sites])
     # rows ordered (site, amp)
@@ -105,7 +116,8 @@ def main():
         for i, n in enumerate(NAMES):
             z[ds.PARAM_NAMES.index(n)] = z_vec[i]
         with torch.no_grad():
-            e = ds.run(ds.theta_from_z(z, base=base), net, proto, noise_scale=0.0)
+            e = ds.run(ds.theta_from_z(z, base=base), net, proto, noise_scale=0.0,
+                      coupling_mode=args.coupling_mode)
         return ds.baseline_correct(e[:, 0]).numpy()          # (S*A, C, T)
 
     t0 = time.time()
@@ -121,7 +133,7 @@ def main():
                         sites=sites, amps=np.array(AMPS))
 
     res = {"teacher": tag, "truth": truth, "sigma_uV": args.sigma, "sites": sites,
-           "amps": AMPS, "names": NAMES,
+           "coupling_mode": args.coupling_mode, "amps": AMPS, "names": NAMES,
            "peak_abs_uV": float(np.abs(y0).max()), "protocols": {}}
     for pname, (rows, (t_a, t_b)) in protocols().items():
         idx = [s * len(AMPS) + j for s, j in rows]

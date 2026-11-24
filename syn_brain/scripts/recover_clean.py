@@ -47,6 +47,10 @@ def main():
     ap.add_argument("--iters", type=int, default=200)
     ap.add_argument("--lr", type=float, default=0.03)
     ap.add_argument("--integer-delays", action="store_true")
+    ap.add_argument("--coupling-mode", default="laplacian", choices=["laplacian", "non_diffusive"])
+    ap.add_argument("--g-override", type=float, default=None,
+                    help="use this g instead of the teacher's own drawn value (see identifiability.py "
+                         "N0.2 note: nominal g saturates U_BOUND under non_diffusive coupling)")
     ap.add_argument("--grad-warmup", type=int, default=200, help="ms of warm-up differentiated; -1 = none")
     ap.add_argument("--tag", default="")
     ap.add_argument("--threads", type=int, default=1)
@@ -55,6 +59,8 @@ def main():
     amps_tag = "-".join(str(int(a)) for a in args.amps)
     run = (f"n{args.n_nodes}_s{args.sites}_a{amps_tag}_init{args.init_seed}"
            f"{'_intdel' if args.integer_delays else ''}{'_nowarmgrad' if args.grad_warmup < 0 else ''}"
+           f"{'_' + args.coupling_mode if args.coupling_mode != 'laplacian' else ''}"
+           f"{'_g' + f'{args.g_override:g}' if args.g_override is not None else ''}"
            f"{args.tag}_t{args.teacher_seed}")
     log = get_logger(f"recover_clean_{run}")
     out_dir = RESULTS_DIR / "recovery_clean"
@@ -65,6 +71,8 @@ def main():
     sites = pick_sites(anat, 8, seed=0)
     ki_all = np.stack([site_weights(anat, int(s))[:, 0] for s in sites])
     truth = draw_teacher(anat.n_nodes, seed=args.teacher_seed, spread=args.spread).effective
+    if args.g_override is not None:
+        truth = dict(truth); truth["g"] = args.g_override
     truth_z = np.array([np.log(truth[n] / ds.NOMINAL_EFF[n]) for n in NAMES])
     th_truth = {n: torch.tensor(truth[n], dtype=torch.float64) for n in ds.PARAM_NAMES}
 
@@ -72,7 +80,8 @@ def main():
     full = ds.Protocol(ki=np.repeat(ki_all, len(ALL_AMPS), axis=0), amp=np.tile(np.array(ALL_AMPS), 8))
     train_rows = [s * len(ALL_AMPS) + ALL_AMPS.index(a) for s in range(args.sites) for a in args.amps]
     with torch.no_grad():
-        teach_full = ds.run(th_truth, net, full, noise_scale=0.0, integer_delays=args.integer_delays)[:, 0]
+        teach_full = ds.run(th_truth, net, full, noise_scale=0.0, integer_delays=args.integer_delays,
+                        coupling_mode=args.coupling_mode)[:, 0]
     train = ds.Protocol(ki=full.ki[train_rows], amp=full.amp[train_rows])
     target = teach_full[train_rows].numpy()
 
@@ -84,7 +93,7 @@ def main():
     log.info("start log-offsets: %s", " ".join(f"{n}={v:+.2f}" for n, v in zip(NAMES, z0)))
 
     res = fit(target, net, train, NAMES, z0=z0, iters=args.iters, lr=args.lr,
-              integer_delays=args.integer_delays,
+              integer_delays=args.integer_delays, coupling_mode=args.coupling_mode,
               grad_warmup_ms=None if args.grad_warmup < 0 else args.grad_warmup,
               log=log, truth_z=truth_z)
     zf = res["z"][-1]
@@ -105,8 +114,10 @@ def main():
         zs[ds.PARAM_NAMES.index(n)] = float(zf[i])
         z_start[ds.PARAM_NAMES.index(n)] = float(z0[i])
     with torch.no_grad():
-        stud_full = ds.run(ds.theta_from_z(zs), net, full, noise_scale=0.0, integer_delays=args.integer_delays)[:, 0]
-        start_full = ds.run(ds.theta_from_z(z_start), net, full, noise_scale=0.0, integer_delays=args.integer_delays)[:, 0]
+        stud_full = ds.run(ds.theta_from_z(zs), net, full, noise_scale=0.0, integer_delays=args.integer_delays,
+                           coupling_mode=args.coupling_mode)[:, 0]
+        start_full = ds.run(ds.theta_from_z(z_start), net, full, noise_scale=0.0, integer_delays=args.integer_delays,
+                            coupling_mode=args.coupling_mode)[:, 0]
     err_stud = rel_rmse(stud_full, teach_full)
     err_start = rel_rmse(start_full, teach_full)
     is_train = np.zeros(len(err_stud), bool)

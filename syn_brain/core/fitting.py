@@ -8,6 +8,8 @@ Differences from neurofe's JansenRit.fit, each switchable for the Step 3 ablatio
   - noise-free student fitted to a noise-free teacher (R0-clean), or K-trial averages
     with common random numbers
   - several stimulation conditions in one loss
+  - coupling_mode: "laplacian" (neurofe's default, zero mean drive) or
+    "non_diffusive" (gives nodes a non-zero mean drive; network_study_plan.txt N0.1)
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from . import diffsim as ds
 def fit(target: np.ndarray, net: ds.Net, proto: ds.Protocol, names, z0=None, base=None,
         iters: int = 200, lr: float = 0.03, window=(100, 400), integer_delays=False,
         grad_warmup_ms: int | None = 200, noise_scale=0.0, n_trials=1, noise_seed=0,
-        log=None, log_every=10, truth_z=None):
+        coupling_mode: str = "laplacian", log=None, log_every=10, truth_z=None):
     """Fit log-parameters `names` so the student's EEG matches `target` (S, C, T).
 
     Parameters not in `names` stay at `base` (default nominal). Loss is the MSE of
@@ -44,7 +46,8 @@ def fit(target: np.ndarray, net: ds.Net, proto: ds.Protocol, names, z0=None, bas
         z = torch.zeros(len(ds.PARAM_NAMES), dtype=torch.float64)
         z = z.index_put((torch.tensor(idx),), z_fit)
         e = ds.run(ds.theta_from_z(z, base=base), net, proto, n_trials=n_trials, noise_seed=noise_seed,
-                   noise_scale=noise_scale, integer_delays=integer_delays, grad_warmup_ms=grad_warmup_ms)
+                   noise_scale=noise_scale, integer_delays=integer_delays, grad_warmup_ms=grad_warmup_ms,
+                   coupling_mode=coupling_mode)
         e = ds.baseline_correct(e.mean(1))[..., window[0]:window[1]]
         loss = (e - y).pow(2).mean() / scale
         opt.zero_grad()

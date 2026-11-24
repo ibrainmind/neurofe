@@ -1,7 +1,7 @@
 """Differentiable Jansen-Rit network for identifiability analysis and clean fitting.
 
 Same equations as core/simulator.py (and therefore neurofe's JansenRit.forward), with
-four deliberate differences that the Phase 2 ablation can switch on and off:
+five deliberate differences that the Phase 2 ablation can switch on and off:
 
 1. Parameters are given as *effective* values (the ones entering the equations),
    learned as log-scaled offsets z: theta = nominal * exp(z). Every parameter then
@@ -14,6 +14,13 @@ four deliberate differences that the Phase 2 ablation can switch on and off:
    That makes finite differences and trial-averaged gradients smooth.
 4. A leading batch axis holds (condition x trial): each condition can have its own
    stimulation mask `ki` and pulse amplitude.
+5. Coupling can be the Laplacian neurofe uses (`coupling_mode="laplacian"`, the
+   default -- zero mean drive when every node rests at the same state, see
+   docs/background_drive_note.txt) or non-diffusive (`coupling_mode="non_diffusive"`):
+   g * sum_j w_ij * S(E_j(t - d_ij)) -- neighbours send a firing rate, which is
+   positive, so a node's mean drive grows with g and its degree, letting the network
+   itself push nodes toward the firing state instead of requiring an external tonic
+   drive (syn_brain/docs/network_study_plan.txt, Part N0).
 
 Everything runs in float64 by default: finite-difference Jacobians need it.
 """
@@ -92,7 +99,7 @@ class Protocol:
 def run(theta: dict, net: Net, proto: Protocol, n_trials: int = 1, noise_seed: int | None = None,
         noise_scale: float = 1.0, integer_delays: bool = False, step_size: float = 1e-4,
         hidden: int = 10, grad_warmup_ms: int | None = None, state0=None, return_state=False,
-        dtype=torch.float64):
+        coupling_mode: str = "laplacian", dtype=torch.float64):
     """Simulate every condition (x n_trials) and return EEG (S, n_trials, C, T).
 
     noise_scale = 0 gives a deterministic run (std_in then has no effect).
@@ -100,7 +107,11 @@ def run(theta: dict, net: Net, proto: Protocol, n_trials: int = 1, noise_seed: i
     without autograd and only the last grad_warmup_ms are differentiated. Starting from
     a settled state, that is enough to carry the parameter dependence of the baseline.
     state0: optional (hx, hE) to start from instead of the fixed small initial state.
+    coupling_mode: "laplacian" (neurofe's default, zero mean drive) or "non_diffusive"
+    (g * sum_j w_ij * S(E_j delayed), a positive, degree-weighted mean drive).
     """
+    if coupling_mode not in ("laplacian", "non_diffusive"):
+        raise ValueError(f"coupling_mode must be 'laplacian' or 'non_diffusive', got {coupling_mode!r}")
     S, R, N, C = proto.n_cond, n_trials, net.n, net.c
     B = S * R
     gen = None
@@ -149,7 +160,12 @@ def run(theta: dict, net: Net, proto: Protocol, n_trials: int = 1, noise_seed: i
         return Ed0 + frac.T * (Ed1 - Ed0)               # frac[i, j] -> Ed[b, j, i]
 
     def step_ms(P, E, I, Pv, Ev, Iv, hE, u_amp):
-        LEd = (w_n * delayed(hE)).sum(2, keepdim=True)
+        Ed = delayed(hE)
+        if coupling_mode == "laplacian":
+            coupling = (w_n * Ed).sum(2, keepdim=True) + dg @ E
+        else:   # non_diffusive: neighbours send a firing rate (always >= 0), not a potential
+            Ed_rate = vmax / (1 + torch.exp(r * (v0 - Ed)))
+            coupling = (w_n * Ed_rate).sum(2, keepdim=True)
         for _ in range(hidden):
             if gen is not None:
                 noise = std_in * torch.randn((B, N, 1), generator=gen, dtype=dtype)
@@ -158,7 +174,7 @@ def run(theta: dict, net: Net, proto: Protocol, n_trials: int = 1, noise_seed: i
             P_s = vmax / (1 + torch.exp(r * (v0 - (E - I))))
             E_s = vmax / (1 + torch.exp(r * (v0 - c1 * P)))
             I_s = vmax / (1 + torch.exp(r * (v0 - c3 * P)))
-            rE = noise + g * (LEd + dg @ E) + c2 * E_s
+            rE = noise + g * coupling + c2 * E_s
             rP_bd = U_BOUND * torch.tanh(P_s / U_BOUND)
             rE_bd = U_BOUND * torch.tanh(rE / U_BOUND)
             if u_amp is not None:

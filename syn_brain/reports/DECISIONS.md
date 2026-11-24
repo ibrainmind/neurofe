@@ -315,3 +315,98 @@ previous entry. Recommended next steps (not yet done): characterize/correct the 
 bias; extend calibration to harder operating points (E-dominant, oscillation-adjacent) before
 trusting this for Part B disease-marker work, since disease mechanisms will plausibly push some
 patients toward exactly those harder states.
+
+## 2026-11-24 — Network study plan written; Part N0/N1 (coupling fix + Fisher sweep) executed
+
+Wrote `docs/network_study_plan.txt` (format matches `single_node_study_plan.txt`), after reading
+`core/fitting.py`, `scripts/identifiability.py`, `scripts/recover_clean.py` directly and finding a
+parallel effort had already built most of the harness this plan originally proposed building from
+scratch — revised the plan's inventory (section 2) to reflect that before writing the rest of it.
+
+**N0.1/N0.2 (coupling fix + tiny-scale sanity check): done.** Added `coupling_mode` to
+`core/diffsim.py` (`"laplacian"` default, unchanged; new `"non_diffusive"`: neighbours send a
+firing rate `S(E_j)`, always >=0, so mean drive grows with g and in-degree, instead of the
+zero-mean Laplacian). 3-node scan confirms it works as intended (g=0 -> -1.861 mV rest baseline;
+g=200 -> +5.978 to +5.996 mV, at/above v0). 10-node scan at nominal g=1000.01: fully engaged
+(6.023 mV), zero oscillation amplitude at every tested g (180-400) over 9 s — no bistability/
+oscillation risk introduced by the fix itself, for this teacher.
+
+**N0.3 (thread coupling_mode through identifiability.py/recover_clean.py): done, and caught a real
+bug before it became a false network-level finding.** Nominal g=1000.01 is calibrated for the
+self-cancelling Laplacian; under `non_diffusive` coupling at that same g, `g*coupling` reaches
+2000-5000 per node (confirmed by direct computation, not inferred), which saturates
+`core/diffsim.py`'s `U_BOUND=500` safety clip (`tanh(rE/U_BOUND)*U_BOUND`) and kills gradients.
+**Decision: added `--g-override` to both scripts rather than silently using each teacher's own
+drawn g**, and swept it (300/200/150/120/100/70/50) to characterize the actual operating range —
+exactly the kind of harness bug this plan's own risk list (section 8) said N0.3 existed to catch.
+The ensemble wrapper (>=15-20 restarts, nominal-centered) from N0.3's task list is **not yet
+built** — flagged as the next thing to add if the N2 single-start pilot below looks promising.
+
+**N1 (Fisher/CRB sweep, 10 nodes, tier S1): done, gate passed comfortably.** Full CRB table (8
+sites x 3 amplitudes protocol) is in `docs/network_study_plan.txt` section 4. Three findings:
+
+1. non_diffusive at the teacher's own nominal g (1000.01) is catastrophic (g/c1/c2/mu blow out to
+   35-1400%) — this is the U_BOUND bug above, not a property of the coupling idea.
+2. Once g is in a non-saturating range, non_diffusive has a clean interior sweet spot at
+   g~=100-120: every parameter under ~2% (mu=0.93%, the long-standing Phase-1 blind spot, and g
+   itself=0.68%, both excellent). Degrades in opposite directions either side (g>=150:
+   re-saturating; g<=70: under-engaged, c3/c4 hit hardest).
+3. **Unexpected, and the finding that most changes this plan's framing:** the existing Laplacian
+   (rest, zero mean drive — what Phase 1 actually used) is ALREADY excellent at network scale for
+   every parameter (worst case c4=2.7%, including mu=0.003% and g=0.0033%) — unlike the
+   single-node study, where rest-state c1-c4 bounds were 56-250% with one pulse. Likely cause:
+   pooling 24 largely-independent site x amplitude conditions constrains shared GLOBAL parameters
+   even without any single node individually engaged. **This does not mean Phase 1 should have
+   succeeded at rest — it demonstrably failed, with this same Laplacian coupling, using neurofe's
+   real JansenRit.fit.** The CRB-says-rest-is-fine vs Phase-1-backprop-got-stuck gap is now the
+   single most important open question, and is exactly why N2 (below) runs both coupling modes
+   side by side rather than assuming the coupling fix is the fix that matters. Candidate
+   non-coupling explanations the single-node study independently showed matter and that N0.3's
+   harness fixes regardless of coupling mode: raw (non-log) parameterisation, integer delays,
+   single-pulse/single-site stimulus, single point estimate with no restarts.
+
+**N2 pilot (backprop recovery, single start, both coupling modes) launched this session, same
+teacher/sites/amplitudes as N1** — direct background processes (`nohup`), not `Workflow`, after
+this session's earlier experience of `Workflow` agents' turns ending before a detached background
+job actually finished.
+
+**N2 pilot result (one teacher, single nominal-centered start, 300 iterations, full 8-site x
+3-amplitude design used for training — this is a single-teacher pilot, NOT yet the >=8-teacher
+N2 gate in section 5):**
+
+  Laplacian (rest coupling): loss drops cleanly from 0.11 to 5.5e-6. Recovery at iter 299: a
+  +0.1%, b -0.2%, g +0.6%, c3 +2.2%, c4 -3.7%, mu -0.2%, k -0.0% — all excellent, including g
+  and mu. c1*c2 = -16.5% error, c3*c4 = -1.6% error (both under the 20% single-node target,
+  individual c1/c2 are off by design — only their product is identifiable). Train rel. RMSE
+  0.0036 (from a start of 0.383).
+
+  Non_diffusive, g=100 (the CRB "sweet spot" from N1): loss plateaus at ~7.5e-3 by iteration 60
+  and never moves again — training rel. RMSE only reaches 0.128 (vs Laplacian's 0.0036, ~35x
+  worse). Recovery at iter 299: g +114%, c1 +141%, c2 +168%, c3 -44.6%, c4 +84.4%, mu -33%.
+  c1*c2 = +547% error (catastrophic); c3*c4 happens to land at +2.1% (close, likely because the
+  fit drifted along the known c3/c4 degenerate direction rather than actually constraining it).
+
+**This directly confirms the CRB-vs-backprop gap N1 flagged, and resolves the open question in
+the opposite direction from what motivated this coupling fix in the first place:**
+
+- The Laplacian (rest) coupling — Phase 1's own, unchanged coupling — recovers essentially
+  everything from a SINGLE nominal-centered start, no ensemble needed, once the other N0.3
+  harness fixes are in place (log-scaled parameters, fractional delays, the rich 8-site x
+  3-amplitude design). This strongly suggests Phase 1's actual failure was never about missing
+  mean drive — it was the four OTHER things the single-node study already found matter (raw
+  parameterisation, integer delays, single-pulse/single-site stimulus, no restarts/ensemble),
+  all of which this pilot already fixes and none of which touch the coupling term.
+- Non_diffusive coupling, even at its CRB-favoured operating point, gets stuck in a bad basin
+  from a single start and does not recover — a textbook Fisher-good-but-landscape-bad failure,
+  the same pattern single-node E9-E12 diagnosed for c1*c2 at a bad operating point, now appearing
+  for the coupling term itself. The missing N0.3 ensemble/restart wrapper is the natural next
+  check (does one of >=15 nominal-centered restarts escape this basin) before concluding
+  non_diffusive coupling is unusable, not just unlucky here.
+
+**Decision: do not adopt the non-diffusive coupling fix as a prerequisite for the network study.**
+The existing Laplacian coupling, combined with the harness fixes already built this session
+(log-scale params, fractional delays via `core/diffsim.py`, rich multi-site/multi-amplitude
+design), already clears a single-teacher pilot version of the N2 bar. Proceed to the real N2 gate
+(>=8 independent teachers, Laplacian coupling, still a single start per teacher as a first pass)
+before adding an ensemble wrapper or revisiting non_diffusive coupling — both are now
+lower-priority than this result initially suggested.
