@@ -521,25 +521,24 @@ def ei_section():
     s.append(P("5.3  The E/I phase map", H2))
     have = extract_remote_figure()
     if have:
-        s.append(img(REMOTE_FIG, "Figure 7. The E/I phase map from reports/ei_balance_bifurcation_map.pdf (simulated "
-                                 "from a cold start on a 15 × 19 grid). Top: state, E/I dominance of the active state, "
-                                 "oscillation amplitude. Bottom: Cramér–Rao bound on c1·c2 for a single pulse and for the "
-                                 "rich protocol, and the median bounds against drive. It shows where TMS can and cannot "
-                                 "identify the loops."))
+        s.append(img(REMOTE_FIG, "Figure 7. The E/I phase map from reports/ei_balance_bifurcation_map.pdf (corrected "
+                                 "24 Nov to the equation-level analysis, 15 × 19 grid), with the Cramér–Rao bound on "
+                                 "c1·c2 for a single pulse and for the rich protocol overlaid. It shows where TMS can "
+                                 "and cannot identify the loops."))
     fig_stability_map(FIG / "stability_map.png")
     s.append(img(FIG / "stability_map.png", "Figure 8. The same plane computed from the equations instead of cold-start "
                                             "simulation. It agrees with Figure 7 on the main structure and adds two "
-                                            "things a cold-start scan cannot see: the bistable band along the "
-                                            "quiet/active boundary, and which oscillations exist only because of "
-                                            "neurofe's integration step.", width=0.85 * W))
+                                            "the same classification at finer resolution, including the bistable band "
+                                            "along the quiet/active boundary and which oscillations exist only because "
+                                            "of neurofe's integration step.", width=0.85 * W))
     s += bullets([
         "<b>Agreement.</b> The quiet/active boundary bends with balance: an excitation-dominant column becomes active at "
         "much lower drive, an inhibition-dominant one needs more. Genuine sustained oscillations sit in a band of "
         "slightly inhibition-leaning columns (m ≈ 0.55–0.95) at drive above p ≈ 160, at 6–11 Hz.",
         "<b>Bistability along the boundary.</b> For the balanced column the quiet and the active state coexist from "
-        "p ≈ 37 to 115 (Figure 9). A cold-start scan only ever finds the quiet one there, which is why Figure 7 shows "
-        "these cells as quiet. Excitation-dominant columns are bistable already at zero drive: once activated, they "
-        "can stay active with no input at all.",
+        "p ≈ 37 to 115 (Figure 9). A cold-start scan only ever finds the quiet one there (the first version of the "
+        "E/I report labelled these cells quiet; it was corrected on 24 Nov). Excitation-dominant columns are bistable "
+        "already at zero drive: once activated, they can stay active with no input at all.",
         "<b>The oscillation of the balanced column at very high drive is a numerical effect.</b> At m = 1 the active "
         "state stays stable up to p ≈ 280 in the equations, but its damping becomes so weak (−0.1 /s at p = 270) that "
         "neurofe's Euler step of 0.1 ms, which slightly amplifies weakly damped oscillations (by about ω²·dt/2 ≈ "
@@ -557,9 +556,10 @@ def ei_section():
         f"(E − I = {h['ramp'][h['down'].index(50)]:.2f} mV at p = 50, against {h['cold'][h['down'].index(50)]:.2f} mV from a "
         f"fresh start) and drops to the quiet state only between p = 50 and 40. In the equations the active state exists "
         f"down to p ≈ {h['lo']:.0f}, but near that edge it is barely separated from the unstable state, so a step in drive "
-        f"knocks it over a little earlier. Raising the drive from the quiet state, it stays quiet up to p ≈ 115. The E/I balance report found no hysteresis when leaving a <i>sustained oscillation</i> by lowering "
-        "the drive, and this analysis agrees: the oscillation band has no coexisting stable states in the equations "
-        "(Figure 8). The hysteresis is at the quiet/active boundary, which that test did not cross. Physically, an "
+        f"knocks it over a little earlier. Raising the drive from the quiet state, it stays quiet up to p ≈ 115. The first version of the E/I balance report found no hysteresis, "
+        "but its test started from the integrator-made oscillation at m = 1, p = 270 and never crossed the fold; that "
+        "finding was withdrawn on 24 Nov. The oscillation band itself has no coexisting stable states in the equations "
+        "(Figure 8). Physically, an "
         "active column can be held active by much weaker input than it took to switch it on."))
     dtc = dt_check(FIG / "dt_check.json")
     rows = [["Column", "Step 0.1 ms (neurofe): oscillation at 5 / 15 / 30 s", "Step 0.01 ms", "Verdict"]]
@@ -576,11 +576,12 @@ def ei_section():
     s.append(P("5.5  Identifiability across the map", H2))
     s.append(table([["Region (median over active points)", "c1·c2, single pulse", "c1·c2, rich", "c3·c4, single pulse",
                      "c3·c4, rich"],
-                    ["balanced (0.77 &lt; m &lt; 1.3)", "24%", "9%", "22%", "5%"],
-                    ["E-dominant (m ≥ 1.3, too much E)", "2807%", "19%", "3329%", "10%"],
-                    ["I-dominant (m ≤ 0.77, too much I)", "110%", "15%", "36%", "4%"]],
+                    ["balanced (0.77 &lt; m &lt; 1.3), n = 21", "23%", "9%", "22%", "5%"],
+                    ["E-dominant (m ≥ 1.3, too much E), n = 99", "265,234%", "24%", "29,733%", "18%"],
+                    ["I-dominant (m ≤ 0.77, too much I), n = 14", "108%", "15%", "35%", "4%"]],
                    [0.34, 0.165, 0.165, 0.165, 0.165]))
-    s.append(P("Table 5. Cramér–Rao bounds by region (from reports/ei_balance_bifurcation_map.pdf, Table 2). "
+    s.append(P("Table 5. Cramér–Rao bounds by region, median over active stable points (from the corrected "
+               "reports/ei_balance_bifurcation_map.pdf, Table 2). "
                "Rich = SP1000 + paired pulse + 10 Hz train + E+I injection.", CAP))
     s.append(KeepTogether([table([["Point (m, p)", "Protocol", "c1·c2 backprop", "c3·c4 backprop"],
                     ["balanced (1.0, 150)", "single pulse / rich", "19.3% / 19.1%", "15.0% / 9.1%"],
@@ -605,7 +606,7 @@ def ei_section():
         "fire at their maximum: their sigmoid slope is 0.000. Changing c1 or c2 then changes nothing the pyramidal cells "
         "receive, so the excitatory loop strength L<sub>E</sub> = A·c1·c2·S'<sub>E</sub> is invisible to any stimulus "
         "that does not first pull the column out of saturation. That is why a single pulse gives bounds in the "
-        "thousands of percent there, and why c1·c2 stays the hardest quantity even with the rich protocol (whose E+I "
+        "hundreds of thousands of percent there, and why c1·c2 stays the hardest quantity even with the rich protocol (whose E+I "
         "injection partly does pull the column out of saturation).",
         "<b>Strong damping shortens the information-carrying ringing.</b> The E-dominant column damps its ringing at "
         "−17 /s (gone in ~60 ms); the balanced column at −2.2 /s (rings for ~0.5 s). Less ringing means fewer cycles "

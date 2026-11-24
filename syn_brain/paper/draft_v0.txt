@@ -1,0 +1,370 @@
+TENTATIVE PAPER DRAFT  (v0, 2026-11-24)
+=====================================
+
+Status   : internal draft for discussion; not for circulation outside the team.
+Markers  : [TODO] = work or text still needed;  [verify] = check before submission;
+           [FIG n] = figure plan in section 7, mapped to existing results.
+Sources  : every number below comes from syn_brain/reports/*.pdf and reports/DECISIONS.md.
+
+
+TITLE (working)
+---------------
+
+What can connectome-based neural mass models identify from stimulation-evoked EEG?
+A synthetic teacher-student analysis of gradient-based Jansen-Rit fitting
+
+Alternative:
+Good fits, wrong circuits: identifiability limits of fitting Jansen-Rit models to TMS-EEG
+
+AUTHORS   [TODO: agree authorship and order; Ye's real-data tests motivate the study and should
+           be central; decide whether to involve the original method authors, see section 8]
+
+
+ABSTRACT  (~250 words)
+--------
+
+Connectome-based neural mass models fitted to stimulation-evoked EEG are increasingly used to
+draw mechanistic conclusions, for example that late TMS-evoked components arise from recurrent
+network feedback, or that inhibitory parameters scale cortical excitability. These conclusions
+rest on the fitted parameters meaning something. We tested this directly. A synthetic "teacher"
+Jansen-Rit (JR) model with known parameters generated EEG responses to virtual stimulation, and
+a "student" of identical form was fitted with the gradient-based (PyTorch, Adam) procedure used
+in recent work. Because the truth is known, every fitted value could be checked. Combining
+Fisher-information bounds, profile likelihoods and over 400 trained models, we find that only
+two parameters, the stimulation gain and the excitatory synaptic rate, are reliably identified.
+Three further parameters are fixed by exact scaling symmetries, and the excitatory and
+inhibitory loop strengths are identifiable only as products, only with multi-condition
+stimulation, and only when the column operates near firing threshold; at rest a JR column
+behaves as a near-linear filter in which these loops are invisible. Fits that reproduce the
+training data almost perfectly fail to predict held-out time windows (46-91% late-window error
+with a perfect model and no noise), reproducing the generalization failures observed on real
+TMS-EEG and intracranial data without any model misspecification. Identifiability depends
+strongly on brain state: excitation-dominant columns saturate their excitatory loop, and the
+quiet-to-active transition is bistable. Richer stimulation not only tightens the bounds but makes
+the loss surface discriminative, so that the best-fitting model is also the most accurate. We
+give a practical recipe and argue that mechanistic conclusions from such fits require
+identifiability and robustness checks.
+[TODO: one sentence on network-scale result once section 2.8 is done]
+
+
+1  INTRODUCTION
+---------------
+
+1.1 Context.
+  - Whole-brain neural mass models (NMMs) placed on a diffusion-MRI connectome are a standard
+    tool for interpreting non-invasive brain stimulation responses (TMS-EEG) and intracranial
+    stimulation (CCEPs) [Momi 2023; Momi 2025; David & Friston 2003 verify].
+  - Gradient-based fitting through automatic differentiation (PyTorch) made subject-specific
+    fitting fast and scalable [Griffiths 2022].
+  - Published conclusions increasingly rest on fitted values and on in-silico manipulations of
+    fitted models ("virtual lesions"): e.g. late TEP components (>100 ms) attributed to
+    recurrent network feedback [Momi 2023]; an excitability gradient across the cortical
+    hierarchy attributed to differential recurrence [Momi 2025].
+
+1.2 The problem.
+  - A model that reproduces data well may do so with many different parameter sets
+    (non-identifiability, "sloppiness") [Gutenkunst 2007; Raue 2009 verify].
+  - Validation in this literature is mostly reproduction of the training data (Pearson
+    correlation, PCI); held-out tests are rare. Where they were run on real data (temporal
+    hold-out, held-out stimulation site), fitted models failed:
+      TMS-EEG temporal hold-out: Pearson 0.054 (vs 0.87 in-window)
+      CCEP temporal hold-out:    Pearson 0.258 (vs 0.81 in-window)
+      held-out stimulation site: 0.08-0.18 (vs 0.73-0.78 in-sample)
+    [TODO: cite / include Ye's analysis; confirm numbers and datasets]
+  - On real data three explanations cannot be told apart: non-identifiability, optimization
+    failure, or model misspecification.
+
+1.3 Approach and summary of findings.
+  - Synthetic teacher-student design: the truth is known, so method failures can be separated
+    from misspecification. We start with the smallest unit, a single JR column with a real
+    leadfield read-out, where everything can be analysed exactly, then [TODO] the network.
+  - Findings (one line each, matching sections 2.2-2.7).
+
+
+2  RESULTS
+----------
+
+2.1 A teacher-student framework for stimulation-evoked responses  [FIG 1]
+  - Teacher: JR column (neurofe's equations, nominal parameters), Euler 0.1 ms, read out through
+    a real 62-channel leadfield column (PyTepFit anatomy); EEG in microvolts. Simulator matches
+    neurofe's forward pass to 5e-15 uV.
+  - Student: identical form, fitted by Adam through the simulator, from random starts (+-50%).
+  - Virtual TMS: 12 conditions (amplitudes 250-4000, 2 / 10 / 30 ms pulses, paired pulses at
+    30 and 100 ms, 10 Hz train, injection into excitatory and inhibitory populations, tonic
+    background drive). Protocols combine conditions (single pulse; DOSE = 3 amplitudes;
+    RICH = 6 conditions incl. E+I injection).
+  - Noise: noise-free (best case) and 0.42 uV, the baseline noise of real trial-averaged TMS-EEG.
+
+2.2 At rest, a JR column is a near-linear filter  [FIG 2]
+  - With no background input the pyramidal membrane potential rests at E - I = -1.9 mV, far
+    below threshold (v0 = 6 mV); sigmoid slope 0.03 of a possible 0.70.
+  - Consequences: P1 amplitude 15.1 uV set by k*A only (elasticity +0.99 / +1.02); P1 latency
+    (15 ms) set by the excitatory rate a only (elasticity -0.64); dose ratio 0.99 and
+    paired-pulse ratio 1.00 (responses scale and superpose); the E-I loop leaves only a 0.61 uV
+    late dip, comparable to the real noise level.
+  - Linearisation explains why: V(s) = A k H_a(s) U(s) / (1 - A S' H_a(s)[L_E H_a(s) - L_I H_b(s)]),
+    L_E = A c1 c2 S'_E, L_I = B c3 c4 S'_I. The data constrain only A*k, a, b and the loop gains
+    L_E, L_I, each multiplied by sigmoid slopes that are tiny at rest.
+
+2.3 Exact symmetries and sloppy directions  [FIG 3]
+  - Two near-exact symmetries leave the EEG unchanged (< 1.5 uV of 60 uV for scale factors
+    0.7-1.5; residual only from the tanh input bounds):
+      (A, B) x lam  with (c1..c4, k) / lam        ("bigger synapses" = "more synapses")
+      vmax x lam    with (A, B) / lam and k x lam
+    A, B and vmax are therefore conventions, not measurable quantities.
+  - Cramer-Rao bounds at 0.42 uV noise, single neurofe-style pulse:
+      k 0.89%, a 2.5%, b 14%, c1 56%, c2 112%, c3 129%, c4 252%.
+    Fisher eigenvalues span 5-6 orders of magnitude (sloppy).
+  - Stimulation design helps, unevenly: RICH gives b 0.15%, c1 7.5%, c2 11%, c3 25%, c4 51%;
+    E+I injection alone pins b to 0.38%; pulse width/shape changes little.
+  - Products are much better constrained than ratios (c1*c2 vs c1/c2; c3*c4 vs c3/c4).
+
+2.4 Backpropagation recovers stiff parameters and leaves the rest where it started  [FIG 4]
+  - 402 single-node models (experiments E1-E8). Median "progress" toward the truth
+    (1 = reached, 0 = unmoved): k 0.99, a 0.95, b 0.76, c3 0.61, c4 0.16, c1 -0.04, c2 -0.68
+    (c2 moves away from the truth, absorbing residual error).
+  - Final relative loss ~2e-5, far below the noise-equivalent threshold: the optimizer finds an
+    EEG indistinguishable from the teacher's, with the wrong circuit.
+  - Profile likelihoods: k, a, b have minima well above the noise threshold; c1-c4 stay below it
+    between 0.5x and 2x the truth (single pulse); RICH lifts c1 and c3 only beyond about +-20%.
+  - With realistic noise, c-errors fall BELOW their Cramer-Rao bounds: the parameters did not
+    move, so their error simply reflects the starting point (or prior).
+  - The parameterisation used by the published framework (Adam on raw values, lr 0.05) moves
+    every parameter by ~0.05 per step, i.e. 0.05% of a or c1 but 0.5% of k. Same data and
+    starts: ~250x higher final loss than log-scaled parameters; error on a 9.5% vs 0.6%, on k
+    2.5% vs 0.07%. This alone explains "k recovered, everything else stuck" in network fits.
+  - Releasing A, B, v0, r, vmax (12 free parameters): equally good fits, with A and k drifting
+    along A*k = constant.
+
+2.5 Good fits do not generalize, even with a perfect model  [FIG 5]
+  - Whole-window prediction of held-out stimuli: 0.5-5% error (dominated by P1, set by k and a).
+  - Late window (> 60 ms after the pulse): 5-30% error, even for stimuli seen in training;
+    15-30% for the same stimuli delivered in a different brain state.
+  - Temporal hold-out (fit 0-60 ms, predict the rest; noise-free, perfect model): late-window
+    error 5.2% -> 91% (single pulse), 95% (DOSE), 28% (RICH). Median Pearson stays 0.81-0.94
+    because the late shape survives while its amplitude is wrong; worst start r = 0.02. Pearson
+    alone overstates the fit.
+  - In the active state (p = 150): temporal hold-out 46%; held-out stimulus amplitude 24%.
+  - Which parameter errors matter: per-model parameter error correlates with generalization
+    error for the identifiable quantities (a rho = 0.78, c3*c4 0.71, b 0.65, c1*c2 0.51,
+    k 0.47) but not for individual c1 (rho = -0.14), as the linear theory predicts.
+  - Interpretation: the real-data generalization failures (section 1.2) are what this
+    method produces without any misspecification.
+
+2.6 Brain state determines identifiability: background drive, E/I balance, bifurcations [FIG 6]
+  - Background drive p (mean afferent input; absent in diffusively coupled networks): above
+    p ~ 115 the resting state jumps to an active, alpha-resonant branch (E - I ~ v0, slope 0.70);
+    single-pulse bound on c3 falls from 129% to 4.7%.
+  - E/I balance m (c1, c2 x sqrt(m); c3, c4 / sqrt(m); m^2 = excitatory/inhibitory loop ratio),
+    15 x 19 grid of (p, m):
+      * the quiet/active boundary bends with balance; sustained oscillation in a band of
+        slightly inhibition-leaning columns (m ~ 0.55-0.95, p >~ 160, 6-11 Hz);
+      * CRB medians by region, single pulse -> RICH:
+          balanced    c1*c2 24% -> 9%,     c3*c4 22% -> 5%
+          E-dominant  c1*c2 2807% -> 19%,  c3*c4 3329% -> 10%
+          I-dominant  c1*c2 110% -> 15%,   c3*c4 36% -> 4%
+      * mechanism for E-dominant failure: the excitatory interneurons saturate (sigmoid slope
+        0.000 vs 0.106 balanced, 0.300 I-dominant), so c1*c2 cannot affect the output.
+  - Bistability and hysteresis: at balance the quiet and active states coexist for
+    p in [36.5, 114.6); a column switched on stays active down to p ~ 40-50 while a fresh start
+    at the same drive is quiet. A student with slightly wrong parameters can sit on the other
+    branch; near the fold, fits are multi-modal (p = 120: c3*c4 error 52-59% vs a 17% bound;
+    warm-starting through the transition makes fits bimodal rather than better).
+  - Integrator effects near the Hopf boundary: at m = 1, p = 270 the equations are (weakly)
+    stable but neurofe's 0.1 ms Euler step sustains a 1.2 mV oscillation that decays with a
+    10x finer step; genuine limit cycles (m = 0.8) are unchanged.
+  - Robustness across subjects (4 teachers +-30%, p = 150): c3*c4 7-28%, c1*c2 13-95%.
+
+2.7 Richer stimulation makes the loss surface discriminative  [FIG 7]
+  - Hardest case (E-dominant), 20 restarts: with a single pulse, final loss does not predict
+    c1*c2 accuracy (Spearman rho = +0.09, p = 0.70); the single best-fitting model had 64%
+    error. With RICH, loss predicts accuracy (rho = +0.83 / +0.81, p < 0.001) and the
+    lowest-loss start is the most accurate (3.1% / 0.8%).
+  - Hard box bounds on c1-c4 roughly double the error (26.2% -> 63.6%), despite containing
+    the truth.
+  - Practical recipe: log-scaled parameters; multi-condition stimulation (amplitudes, paired
+    pulses, E+I targeting); an active operating point away from both transitions; >= 20
+    restarts; select by lowest loss; report identifiable combinations with uncertainty.
+
+2.8 Network scale  [FIG 8]  [TODO]
+  - Existing: 10-node rung-R0 test (tier S1, 3 teachers): only k recovered (errors -2.6%,
+    +6.3%, +0.3%); conduction velocity mu receives no gradient (integer delays); g, c1, c2
+    gradients ~1e4 smaller than a or k; b, c4, std_in converge to the same values whatever the
+    truth. EEG Pearson after training 0.985-0.995 vs 0.979-0.997 untrained: Pearson barely
+    depends on the parameters.
+  - Synthetic TEPs with nominal parameters lack late activity (GMFA peak 24-38 uV at 14 ms vs
+    6.1 uV at ~105 ms real; late/early ratio 0.15-0.19 vs 0.84). With diffusive coupling every
+    node rests in the quiet state of section 2.2.
+  - [TODO] Fisher spectrum of the 10-node network, tiers S1 and S2: number of identifiable
+    combinations vs number of fitted parameters.
+  - [TODO] Temporal and held-out-site tests at R0 on the 10-node network, with and without
+    mean drive / rate-based coupling.
+
+2.9 Real data  [FIG 9]  [TODO]
+  - [TODO] Ye's temporal and cross-site hold-out on the public TMS-EEG dataset (and CCEP),
+    with the same fitting procedure; optionally the recipe of 2.7 applied to real data.
+
+2.10 Uncertainty-aware estimation  [TODO, optional for v1]
+  - [TODO] One estimator that reports uncertainty (simulation-based inference or variational
+    Laplace) on the single-node problem: does it correctly report c1*c2 as undetermined at
+    rest, and calibrated intervals at p = 150 with RICH?
+
+
+3  DISCUSSION
+-------------
+
+3.1 What TMS-EEG can and cannot tell a JR model.
+  - Reliable: how strongly the cortex responds (k*A) and how fast excitatory synapses act (a);
+    inhibitory kinetics (b) with the right protocol.
+  - Conditional: loop strengths, only as products, only in an active state, only with
+    multi-condition stimulation; not robust across subjects.
+  - Never: synapse strength vs number (A, B vs c's), maximum firing rate.
+
+3.2 Implications for published mechanistic conclusions.
+  - Late TEP components as network recurrence (virtual lesions): in a quiet JR column late
+    activity must come from the network, but an active column rings locally for ~0.5 s; the
+    attribution therefore depends on the operating point and on the least identifiable
+    (late-window) parameters. Virtual-lesion conclusions should be shown to hold across the
+    set of equally good fits.
+  - Fitted inhibitory time constants correlating with TEP features: b is the best-behaved of
+    the inhibition-related parameters, but it directly sets late-dip amplitude, so part of the
+    correlation is built into the fit (the original authors note the effect does not survive
+    correction).
+  - Fitted connectomes that stay at their tractography prior (as reported in Momi 2025) are
+    the expected outcome when per-edge weights are not identifiable; conclusions then reflect
+    the prior.
+  - Tone: these papers' data-level findings and tools are unaffected; the point is which
+    model-based inferences are supported. [TODO: agree framing with co-authors]
+
+3.3 Recommendations.
+  - Report validation beyond training-data fit: temporal hold-out, held-out stimulation site,
+    held-out stimulus.
+  - Optimise log-scaled parameters; fix gauge parameters; fit identifiable combinations;
+    fractional delays; check results against integrator step near transitions.
+  - Design stimulation for identification (multi-condition, E/I-targeted); choose operating
+    points away from bifurcations; supply mean drive in network models.
+  - Prefer ensembles with loss-based selection, or posterior methods, over single fits.
+
+3.4 Relation to prior work.  [TODO: literature review]
+  - Sloppiness in systems biology [Gutenkunst 2007]; profile likelihood [Raue 2009];
+    identifiability and model comparison in DCM [verify]; simulation-based inference for
+    whole-brain models [Hashemi 2023 verify]. Our novelty: the specific, widely used
+    TMS-EEG pipeline; the mechanism from the equations; the dependence on brain state and
+    stimulation design; reproduction of real-data generalization failures.
+
+3.5 Limitations.
+  - Mostly single node; rung R0 (teacher and student share the model form) and R1 (noise);
+    misspecification rungs R2-R6 not yet run.
+  - One optimizer family (Adam) for the main results.
+  - Teacher realism: synthetic TEPs lack late activity until mean drive is added.
+  - Neural mass models lump cell types; biological readings of parameters are approximate.
+
+
+4  METHODS  (outline)
+---------
+
+4.1 Model. JR equations as implemented in neurofe (effective-value floors, tanh input bounds
+    500, Euler 0.1 ms with 10 sub-steps per 1 ms sample, EEG = 5e-4 * leadfield * (E - I));
+    tonic drive p and E/I multiplier m as defined above. Code: core/node.py, core/simulator.py,
+    core/diffsim.py; equivalence tests in tests/test_simulator.py.
+4.2 Anatomy and read-out. PyTepFit Schaefer-200 connectome, distances and 62-channel
+    leadfield (external/pytepfit/).
+4.3 Stimulation protocols. Table of the 12 conditions and protocols (scripts/single_node_tms.py).
+4.4 Identifiability analysis. Central-difference Jacobians in log-parameter space; Fisher
+    information F = J^T J / sigma^2 with sigma = 0.42 uV; Cramer-Rao bounds, eigen-spectra,
+    combination bounds; profile likelihood by pinning one parameter and refitting the rest.
+4.5 Training. Adam on log(theta/nominal), lr 0.04, cosine schedule, 300 iterations, relative
+    MSE loss; random starts +-50%; raw-parameter ablation with neurofe's settings (lr 0.05).
+    Experiments E1-E12 and the follow-ups as listed in reports/DECISIONS.md.
+4.6 Bifurcation analysis. Fixed points by root-finding of a scalar equation; stability from
+    numerical Jacobian eigenvalues; regimes confirmed by direct simulation (two time windows;
+    10x finer step).
+4.7 Metrics. Relative RMSE and Pearson on whole and late windows; progress toward truth;
+    Spearman correlations between parameter and prediction errors.
+4.8 Code and data availability. Repository, commit hash, one-command reproduction
+    (scripts/run_single_node_tms.sh). [TODO: public release plan]
+
+
+5  KEY NUMBERS AT A GLANCE  (for the abstract and figures)
+------------------------
+
+  Reliable parameters ............................. k, a   (all protocols, all states)
+  CRB, single pulse, rest ........................ k 0.89%, a 2.5%, b 14%, c's 56-252%
+  Backprop progress at rest ...................... k 0.99, a 0.95, c1 -0.04, c2 -0.68
+  Raw vs log parameterisation .................... ~250x loss, a 9.5% vs 0.6% error
+  Temporal hold-out, perfect model ............... late error 46-91%
+  Fold / bistable window (balanced) .............. p in [36.5, 114.6)
+  E-dominant single-pulse CRB .................... > 2500%   (RICH: 10-19%)
+  Loss predicts accuracy ......................... rho 0.09 (single pulse) vs 0.83 (RICH)
+
+
+6  OPEN WORK BEFORE SUBMISSION  (estimate ~6-10 weeks)
+------------------------------
+
+  1. Network: 10-node Fisher spectrum (S1, S2) + temporal and held-out-site tests at R0.  1-2 wk
+  2. One uncertainty-aware estimator on the single node (SBI or variational Laplace).    1-2 wk
+  3. Real-data section from Ye's hold-out analyses.                                      write-up
+  4. Literature review and positioning (identifiability of NMMs, DCM, SBI/TVB).          1 wk
+  5. Figure production from existing results (section 7); consistent style.              1 wk
+  6. Decide authorship, framing and whether to coordinate with the original authors.     -
+  Optional: the attribution test (section 8) as part of this paper or a companion.
+
+
+7  FIGURE PLAN  (sources exist unless marked TODO)
+--------------
+
+  FIG 1  Design: column diagram, teacher-student scheme, the 12 stimulation conditions.
+         Sources: results/single_node_tms/explainer/column.png, fig_responses.png
+  FIG 2  Rest = near-linear filter: one-at-a-time responses, elasticity matrix, sigmoid
+         operating point.  fig_oneatatime.png, fig_elasticity.png, explainer/kernels.png
+  FIG 3  Symmetries and sloppiness: gauge demonstration, Fisher spectra, CRB by protocol,
+         products vs ratios.  explainer/gauge.png, fig_sloppiness.png, fig_crb.png,
+         explainer/combos.png
+  FIG 4  Backprop recovery: E1 recovery, profile likelihood, raw vs log, A*k trade-off.
+         fig_e1_recovery.png, fig_e5_profile.png, fig_e2_raw_vs_log.png, fig_e3_extended.png
+  FIG 5  Generalization: generalization matrix (whole vs late), temporal hold-out,
+         parameter error vs prediction error.  fig_e1_generalisation.png, fig_e8_holdout.png,
+         single_node_conclusions.pdf Fig. 3
+  FIG 6  Brain state: operating point vs drive, bifurcation diagrams, stability map, E/I
+         phase map with CRB overlay, hysteresis.  explainer/operating_point.png,
+         bifurcation.png, stability_map.png, hysteresis.png, ei_balance_bifurcation_map.pdf Fig. 1
+  FIG 7  Loss-accuracy relation, single pulse vs RICH; hard bounds.
+         single_node_conclusions.pdf Fig. 4, Table 3
+  FIG 8  Network scale.  [TODO]
+  FIG 9  Real data hold-out.  [TODO]
+  Supplement: settle-time bug and fix; integrator check table; per-teacher robustness;
+              noise (E4); 12-parameter fits (E3).
+
+
+8  POSSIBLE COMPANION PAPER: THE ATTRIBUTION TEST
+-----------------------------------------------
+
+  Question: does fitting + virtual lesioning correctly attribute late TEP components to local
+  vs network mechanisms?
+  Design: synthetic teachers where the answer is known (late activity from an active local
+  column vs from network feedback with quiet nodes); fit with the published pipeline; apply the
+  same virtual lesions; score attribution across >= 20 equally good fits per teacher.
+  Outcome either way is informative; natural to do jointly with the original method authors.
+
+
+REFERENCES  (all [verify] before use)
+----------
+
+  Biabani M et al. (2019). TMS-EEG dataset used in Momi 2023 (figshare TEPs-SEPs). [verify title]
+  David O, Friston KJ (2003). A neural mass model for MEG/EEG. NeuroImage 20:1743-1755. [verify]
+  Griffiths JD, Wang Z, et al. (2022). Deep learning-based parameter estimation for
+    neurophysiological models of neuroimaging data. bioRxiv 10.1101/2022.05.19.492664.
+  Gutenkunst RN et al. (2007). Universally sloppy parameter sensitivities in systems biology
+    models. PLoS Comput Biol 3:e189. [verify]
+  Hashemi M et al. (2023). Amortized Bayesian inference on generative dynamical network models
+    of epilepsy using deep neural density estimators. Neural Networks. [verify]
+  Jansen BH, Rit VG (1995). Electroencephalogram and visual evoked potential generation in a
+    mathematical model of coupled cortical columns. Biol Cybern 73:357-366. [verify]
+  Momi D, Wang Z, Griffiths JD (2023). TMS-evoked responses are driven by recurrent
+    large-scale network dynamics. eLife 12:e83232.
+  Momi D, Wang Z, et al. (2025). Stimulation mapping and whole-brain modeling reveal gradients
+    of excitability and recurrence in cortical networks. Nat Commun 16:3222.
+  Raue A et al. (2009). Structural and practical identifiability analysis of partially observed
+    dynamical models by exploiting the profile likelihood. Bioinformatics 25:1923-1929. [verify]
+  Transtrum MK, Machta BB, Sethna JP (2011). Geometry of nonlinear least squares with
+    applications to sloppy models and optimization. Phys Rev E 83:036701. [verify]
