@@ -212,3 +212,32 @@ substitute for a real posterior method (no calibrated uncertainty), but it is no
 concrete answer rather than a hopeful assumption. Caveat: tested at one point with one seed;
 the qualitative SP1000-vs-RICH contrast is large and mechanistically well-explained, but exact
 correlation values would shift elsewhere.
+
+## 2026-11-22 — Equation-level bifurcation analysis of the E/I map (for the JR parameter explainer)
+
+While updating `reports/jr_parameters_explainer.pdf` with the E/I-balance results, computed the
+fixed points and their linear stability (eigenvalues) directly from the node equations over the
+same (p, m) plane (`scripts/jr_parameters_explainer.py`: `equilibria`, `fig_stability_map`), and
+checked the key claims by direct simulation. Agrees with `ei_balance_bifurcation_map.pdf` on the
+main structure (boundary bends with m; real oscillation band at m ~0.55-0.95, p >~ 160). Two
+findings that qualify that report:
+
+1. **Hysteresis exists at the quiet/active transition.** For m = 1 the quiet and active states
+   coexist for p in [36.5, 114.6) (fold). Direct test: settle active at p = 150, step drive down
+   -> stays active at p = 110/80/50 (E-I 5.98/5.70/5.33 mV) while cold starts are quiet
+   (2.09/0.79/-0.23 mV); drops to quiet between p = 50 and 40. E-dominant columns are bistable
+   already at p = 0. The earlier "no hysteresis" result concerned leaving the limit cycle, and
+   its ramp did not compare against a cold start inside this window -- both findings stand.
+   Cold-start-only maps label this band "quiet".
+2. **The m = 1, high-drive "limit cycle" is produced by neurofe's Euler step, not the model.** The
+   active state at m = 1 stays stable in the equations up to p ~ 280 but is very weakly damped
+   (Re ~ -0.1 /s at p = 270); explicit Euler at dt = 0.1 ms adds ~ +w^2 dt/2 ~ +0.24 /s at 11 Hz.
+   Simulated 30 s from a cold start: dt = 0.1 ms -> sustained 1.19 mV at p = 270; dt = 0.01 ms ->
+   decays to 0.11 mV. The m = 0.8 limit cycle is identical at both steps (6.9 vs 6.8 mV) -- real.
+   Implication for the inverse-crime rule (teacher at finer dt than student): near a Hopf
+   boundary, teacher and student can disagree about whether the column oscillates at all.
+
+Also: excitatory-interneuron sigmoid slope is 0.000 at the E-dominant test point (m = 1.87,
+p = 105) vs 0.106 balanced and 0.300 I-dominant -- the excitatory loop is saturated, which
+explains why c1*c2 is unidentifiable there regardless of stimulus. No thresholds changed; no new
+fits run.
