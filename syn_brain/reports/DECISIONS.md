@@ -212,3 +212,43 @@ substitute for a real posterior method (no calibrated uncertainty), but it is no
 concrete answer rather than a hopeful assumption. Caveat: tested at one point with one seed;
 the qualitative SP1000-vs-RICH contrast is large and mechanistically well-explained, but exact
 correlation values would shift elsewhere.
+
+## 2026-11-24 — Built and validated a Laplace posterior across 24 random teachers (closes the posterior-method gap)
+
+Used Workflow (William opted in) to run 4 parallel batches of 6 teachers each (24 total,
+independently-drawn, +-30% perturbation of all 7 fitted parameters, screened for a stable
+non-oscillating active state at p=150), each fit with the validated recipe (RICH, 15 restarts,
+lowest-loss selected), then a Laplace approximation (Fisher/CRB covariance at the MAP point)
+for a 90% credible interval on log(c1*c2) and log(c3*c4). Added as section 6 of
+`reports/single_node_conclusions.pdf`.
+
+**Methodological correction applied here and recommended going forward:** every earlier
+experiment in this study drew random restarts within +-50% of each teacher's OWN TRUE value --
+convenient, but real data never gives you that. This run starts every restart from the
+POPULATION-NOMINAL value instead (same reference regardless of the teacher's actual deviation),
+which is the honest version of not knowing a patient's true state in advance. Mathematically,
+`log(theta/nominal)` vs `log(theta/truth)` are the same optimization problem (differ only by a
+constant shift in log-space) -- the choice only matters for where random starts are drawn, not
+for what the optimizer finds once underway.
+
+**Result: point estimates are accurate (median |error| 7.5% c1*c2, 4.0% c3*c4 -- both comfortably
+under the 20% target) and credible intervals are well-calibrated (96% empirical coverage vs a
+90% target, n=24).** This is BETTER than earlier single-point checks because this sample is
+dynamically well-behaved teachers at a safe operating point, not a deliberately hard stress
+test (E-dominant, oscillation-adjacent) -- not a contradiction of earlier findings, a different
+(easier, more representative-of-typical-subjects) part of parameter space.
+
+**But found a real, small, systematic bias**: 18/24 teachers (75%) have their MAP point estimate
+BELOW the true value, for both combinations (Wilcoxon p=0.01-0.02, not noise). Likely cause:
+"winner's curse" -- picking the lowest-loss result out of 15 restarts selects for whichever
+random perturbation happens to reduce loss, not just for accuracy, a well-known bias wherever
+an estimate is chosen as the best of many. Coverage is still good (intervals are wide enough to
+absorb the bias), but the point estimate itself is not unbiased. Not fixed this session --
+flagged as the next concrete check (does bias grow with ensemble size, as the hypothesis
+predicts; does a holdout-based selection rule remove it).
+
+Decision: this closes the "build a real posterior, check calibration" recommendation from the
+previous entry. Recommended next steps (not yet done): characterize/correct the winner's-curse
+bias; extend calibration to harder operating points (E-dominant, oscillation-adjacent) before
+trusting this for Part B disease-marker work, since disease mechanisms will plausibly push some
+patients toward exactly those harder states.
