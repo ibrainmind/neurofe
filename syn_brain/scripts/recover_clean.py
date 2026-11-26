@@ -52,6 +52,12 @@ def main():
                     help="use this g instead of the teacher's own drawn value (see identifiability.py "
                          "N0.2 note: nominal g saturates U_BOUND under non_diffusive coupling)")
     ap.add_argument("--grad-warmup", type=int, default=200, help="ms of warm-up differentiated; -1 = none")
+    ap.add_argument("--amp-scale-by-k", action="store_true",
+                     help="scale every stimulus amplitude by NOMINAL_EFF['k']/teacher['k'], so a "
+                          "teacher with below-nominal stimulus gain gets a stronger pulse instead of "
+                          "a weaker effective drive -- see DECISIONS.md 2026-11-24 (per-teacher k "
+                          "correlates with recovery failure, same mechanism as single-node's "
+                          "per-teacher-p calibration)")
     ap.add_argument("--tag", default="")
     ap.add_argument("--threads", type=int, default=1)
     args = ap.parse_args()
@@ -61,6 +67,7 @@ def main():
            f"{'_intdel' if args.integer_delays else ''}{'_nowarmgrad' if args.grad_warmup < 0 else ''}"
            f"{'_' + args.coupling_mode if args.coupling_mode != 'laplacian' else ''}"
            f"{'_g' + f'{args.g_override:g}' if args.g_override is not None else ''}"
+           f"{'_kscale' if args.amp_scale_by_k else ''}"
            f"{args.tag}_t{args.teacher_seed}")
     log = get_logger(f"recover_clean_{run}")
     out_dir = RESULTS_DIR / "recovery_clean"
@@ -76,8 +83,18 @@ def main():
     truth_z = np.array([np.log(truth[n] / ds.NOMINAL_EFF[n]) for n in NAMES])
     th_truth = {n: torch.tensor(truth[n], dtype=torch.float64) for n in ds.PARAM_NAMES}
 
+    # Only ever boost amplitude for a below-nominal-gain teacher, never reduce it below the fixed
+    # baseline for an above-nominal one -- symmetric scaling under-drove (and hurt) those teachers,
+    # see DECISIONS.md 2026-11-24 "Per-teacher amplitude calibration".
+    amp_scale = max(1.0, ds.NOMINAL_EFF["k"] / truth["k"]) if args.amp_scale_by_k else 1.0
+    amps_eff = tuple(a * amp_scale for a in ALL_AMPS)
+    log.info("amp_scale (nominal_k/teacher_k) = %.3f  -> effective amps %s",
+             amp_scale, " ".join(f"{a:.0f}" for a in amps_eff))
+
     # Full design: every (site, amp); training = first `sites` sites x `amps`.
-    full = ds.Protocol(ki=np.repeat(ki_all, len(ALL_AMPS), axis=0), amp=np.tile(np.array(ALL_AMPS), 8))
+    # ALL_AMPS/args.amps stay nominal (500/1000/2000) for indexing; amps_eff carries the actual
+    # (possibly k-rescaled) stimulus delivered to the model.
+    full = ds.Protocol(ki=np.repeat(ki_all, len(ALL_AMPS), axis=0), amp=np.tile(np.array(amps_eff), 8))
     train_rows = [s * len(ALL_AMPS) + ALL_AMPS.index(a) for s in range(args.sites) for a in args.amps]
     with torch.no_grad():
         teach_full = ds.run(th_truth, net, full, noise_scale=0.0, integer_delays=args.integer_delays,
@@ -126,7 +143,8 @@ def main():
            "heldout_rel_rmse": float(err_stud[~is_train].mean()) if (~is_train).any() else None,
            "start_train_rel_rmse": float(err_start[is_train].mean()),
            "start_heldout_rel_rmse": float(err_start[~is_train].mean()) if (~is_train).any() else None,
-           "per_condition": [{"site": int(r // 3), "amp": ALL_AMPS[r % 3], "train": bool(is_train[r]),
+           "per_condition": [{"site": int(r // 3), "amp_nominal": ALL_AMPS[r % 3],
+                              "amp_delivered": amps_eff[r % 3], "train": bool(is_train[r]),
                               "student": float(err_stud[r]), "start": float(err_start[r])}
                              for r in range(len(err_stud))]}
     log.info("rel. RMSE  train %.4f (start %.3f)   held-out %.4f (start %.3f)",

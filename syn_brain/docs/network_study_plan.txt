@@ -379,6 +379,296 @@ pilot, not yet the >=8-teacher gate above):
   ensemble wrapper exists for unrelated reasons (single-node still needs it
   too).
 
+8-TEACHER N2 GATE RESULT (measured this session, Laplacian coupling, 8
+independently-drawn teachers seed=0..7, single nominal-centered start each,
+300 iterations, training = 4 of 8 sites x ONE amplitude (1000), held out =
+those same 4 sites at 500/2000 PLUS the other 4 sites at all 3 amplitudes):
+
+  Median |rel_error| across 8 teachers:
+    a 0.8%   b 5.0%   g 33.3%   c1 22.7%   c2 27.8%   c3 7.4%   c4 13.7%
+    mu 4.6%   k 1.2%
+    c1*c2 = 60.0%   c3*c4 = 7.6%
+  mu progress: all 8 positive (0.69 to 5.09, median 1.02) -- moves toward
+  truth from every start.
+  Train rel. RMSE: median 0.180 (start 0.58).  Held-out rel. RMSE: median
+  0.184 (start 0.58) -- held-out tracks train closely, so this is NOT an
+  overfitting/generalisation gap; it is a training-convergence problem.
+
+  By the letter of the pre-registered pass criteria (median |error| <20%
+  for k, a, c3*c4; mu shows positive progress): PASSES. But this is a
+  misleading way to read the result, and is flagged here rather than taken
+  at face value (standing adversarial-self-review rule): only 2 of 8
+  teachers (seed 0, seed 5) actually converged to a good EEG fit at all
+  (final loss 1.2e-6 and 2.0e-3); the other 6 plateaued at loss 0.01-0.17,
+  ~10,000x to ~100,000x worse, with g off by 23-111% and c1*c2 off by
+  55-470%. The three criteria that technically pass (a, k, c3*c4) are
+  exactly the parameters that are easiest/stiffest everywhere in this
+  model (see single_node_study_plan.txt) -- they survive even a bad fit;
+  g and c1*c2, the parameters this plan most needed to test, do not.
+
+  **VERDICT: FAIL in substance** (6/8 teachers did not converge), despite
+  a technical pass on the three named headline numbers.
+
+  Root cause, diagnosed rather than left as "sloppy": this held-out split
+  cut training richness from the successful single-teacher pilot's 8
+  sites x 3 amplitudes (24 conditions) down to 4 sites x 1 amplitude (4
+  conditions) -- a much bigger richness cut than intended, made to create
+  a held-out set. This reproduces, almost exactly, the single-node study's
+  own earlier finding (reports/single_node_conclusions.pdf section 5):
+  with a poor (low-diversity) stimulus, final loss does NOT predict
+  parameter accuracy and the optimizer gets stuck in bad basins; a RICH
+  (multi-amplitude) design was what fixed it there. Teacher 0 (this run)
+  and teacher-seed-0 (the earlier full-design pilot) are the SAME teacher
+  -- it converged perfectly both times, including here with only 4
+  conditions, meaning there IS at least one basin cheap enough to find
+  even at this reduced richness; most teachers do not find it from a
+  single nominal-centered start.
+  No oscillation check was run this pass (not yet verified either way).
+
+  Decision: do not re-run the ensemble wrapper yet (that fixes "stuck
+  basin", not "too little information"). Instead redo the held-out split
+  to restore multi-amplitude richness within the training set: train on 4
+  of 8 sites x ALL 3 amplitudes (12 conditions, matches the richness that
+  worked for the single pilot teacher, just on half the sites), hold out
+  the other 4 sites completely (a genuine site-generalisation test, not
+  conflated with amplitude-richness-starvation). This isolates "does a
+  network trained on half the anatomy generalise to the rest" from "is 4
+  sites x 1 amplitude enough signal to fit at all" (it is not, for 6/8
+  teachers) -- the two were accidentally conflated in this first attempt.
+
+RERUN RESULT (same 8 teachers, same coupling/start/iters, training = 4 of 8
+sites x ALL 3 amplitudes [12 conditions], other 4 sites held out entirely):
+
+  Median |rel_error|: a 0.6%  b 5.0%  g 30.3%  c1 32.3%  c2 35.1%  c3 5.7%
+  c4 9.5%  mu 0.8%  k 0.6%   c1*c2 56.5%   c3*c4 6.0%
+  mu progress: median 0.99 (7/8 positive, one near-zero at -0.06).
+  Train rel. RMSE median 0.195 (vs first attempt's 0.180); held-out median
+  0.145 (vs 0.184) -- marginally better held-out, marginally worse train,
+  i.e. essentially NO CHANGE in the aggregate picture despite 3x the
+  training data. a, k, c3*c4 still technically clear the 20% bar; g and
+  c1*c2 still do not (median ~30% and ~57%, both runs).
+
+  Per-teacher final loss, run1 -> run2: t0 1.2e-6->3.4e-6 (both excellent),
+  t1 0.17->0.071 (improved but still bad), t2 0.028->0.004 (now good),
+  t3 0.12->0.056 (improved but still bad), t4 0.030->0.016 (still
+  moderate), t5 0.0020->0.0010 (good both), t6 0.018->0.031 (WORSE),
+  t7 0.011->0.0069 (decent both). Net: tripling training richness helped
+  4/8 teachers, hurt 1/8, left the overall pass/fail picture unchanged --
+  richness was not the dominant factor after all.
+
+  **The dominant factor, found by checking what the consistently-bad
+  teachers (t1, t3, t6) have in common across BOTH designs:** their drawn
+  stimulus gain k is 45-50% BELOW nominal (log-offset -0.66, -0.57, -0.56)
+  -- the three largest negative k offsets of all 8 teachers, by a wide
+  margin (next closest is t4 at -0.10). Spearman correlation of k's
+  log-offset against log10(final training loss): rho=-0.79 (p=0.02, run
+  1), rho=-0.95 (p=0.0003, run 2) -- strong and gets STRONGER with more
+  training data, meaning this is a real effect, not an artifact of too
+  little data. The SIGN matters, not the magnitude (|k offset| alone does
+  not correlate as strongly): teachers with a WEAKER-than-nominal stimulus
+  gain are the ones that fail, not teachers whose k happens to be far from
+  nominal in general.
+
+  **Mechanism (consistent with, not a new finding beyond, the single-node
+  study's own earlier diagnosis):** the same fixed stimulus amplitudes
+  (500/1000/2000) produce a weaker EFFECTIVE drive for a teacher whose own
+  k is low, likely leaving that teacher's network less engaged for the
+  same nominal protocol -- structurally the same problem
+  reports/DECISIONS.md's 2026-11-22 "Mechanism behind the c1.c2/c3.c4
+  recovery failure" entry already diagnosed for the single node ("a single
+  fixed p does not put every teacher in the same dynamical regime"), now
+  reappearing at network scale through a different nuisance parameter (k,
+  not the tonic drive p, since the network pilot's stimulus is pulsed, not
+  tonic) but the same structural cause: ONE fixed protocol cannot put
+  every teacher in the same effective regime when teachers differ in how
+  strongly they respond to it.
+
+  Decision: before reaching for the ensemble/restart wrapper again (a
+  genuinely different diagnosis -- "stuck in one of many basins" vs "wrong
+  regime entirely"), the next experiment should calibrate stimulus
+  amplitude PER TEACHER (e.g. scale amps by nominal_k / teacher_k, or
+  screen each teacher for an engaged-but-stable operating amplitude before
+  fitting, mirroring the single-node per-teacher-p calibration already
+  recommended once in this study) rather than assume a fixed amplitude
+  protocol works for every random draw. Not yet run this session --
+  reported here as the diagnosed next step, not yet executed.
+
+PER-TEACHER AMPLITUDE CALIBRATION RESULT (same 8 teachers/design as the
+rerun above, plus `--amp-scale-by-k`: every stimulus amplitude multiplied
+by nominal_k / teacher_k, symmetric in both directions):
+
+  Median |rel_error|: a 0.6%  b 5.2%  g 40.6%  c1 35.4%  c2 27.7%  c3 9.9%
+  c4 13.2%  mu 2.5%  k 0.3%   c1*c2 41.6%   c3*c4 7.6%
+  Train rel. RMSE median 0.135 (best of all 3 designs so far, vs 0.180 and
+  0.195); held-out median 0.103 (also best, vs 0.184 and 0.145). c1*c2
+  improved materially (41.6% vs 56-60% in the two prior designs).
+
+  **Partially confirms the k-hypothesis, more nuanced than expected:**
+  Final loss, no-scale -> k-scaled: t0 (k=+0.33, scale 0.72x, LESS amp)
+  5.3e-6->5.3e-7 (stayed excellent); t1 (k=-0.66, scale 1.94x, MORE amp)
+  0.071->0.0031 (CLEARLY FIXED); t2 (k=+0.03, scale~1x) 0.0041->0.0044
+  (unchanged, as expected); t3 (k=-0.57, scale 1.77x) 0.056->0.0067
+  (CLEARLY FIXED); t4 (k=-0.10, scale 1.11x) 0.016->0.012 (mildly
+  improved); t5 (k=+0.40, scale 0.67x, LESS amp) 0.0010->0.0041 (4x WORSE);
+  t6 (k=-0.56, scale 1.75x, MORE amp -- almost identical scale to t3)
+  0.031->0.040 (WORSE, not better, despite the same treatment that fixed
+  t3); t7 (k=-0.18, scale 1.20x) 0.0069->0.024 (WORSE).
+
+  Two distinct findings, not one:
+  1. The two teachers with the MOST extreme below-nominal k (t1, t3) were
+     cleanly fixed by boosting their amplitude -- strong direct support
+     for the k-mismatch mechanism for those specific cases.
+  2. Symmetric compensation (scale<1 for above-nominal-k teachers) HURT
+     previously-good teachers (t5, and to a lesser extent the nominal-ish
+     t7): reducing amplitude for a teacher who did not need a boost loses
+     information, not just avoids wasting it. The compensation should only
+     ever INCREASE amplitude, never decrease it below the fixed baseline.
+  3. t6 remains unexplained by the k-amplitude story alone: it has almost
+     the same below-nominal k as t3 (-0.56 vs -0.57) and got almost the
+     same amplitude boost (1.75x vs 1.77x), yet t3 was fixed and t6 was
+     not -- and t6 has now gotten MONOTONICALLY WORSE across all three
+     designs tried this session (0.018 -> 0.031 -> 0.040), independent of
+     both training richness and amplitude. This points at t6 being a
+     dynamically-hard teacher in its own right (echoing the single-node
+     study's T2/T3 pathological draws), not a calibration problem --
+     needs a direct stability/engagement check (equilibria()-style, not
+     another protocol tweak) before concluding anything further about it.
+
+  Decision: two follow-ups identified, neither yet run.
+    (a) Clamp amp_scale at a MAXIMUM of 1.0 (scale = max(1, nominal_k /
+        teacher_k)) so weak-k teachers still get boosted but strong-k
+        teachers are never under-driven relative to the fixed baseline --
+        isolates whether t5/t7's regression was specifically caused by
+        amplitude REDUCTION (expected: yes).
+    (b) Run a direct stability/engagement check on teacher 6 alone (reuse
+        the two-window / equilibria()-style method from
+        ei_balance_bifurcation_map.pdf) across the amplitudes already
+        tried, to see whether it has ANY good operating point at all --
+        the same diagnosis step that identified T2 as structurally
+        unfixable in the single-node study, rather than assuming more
+        protocol engineering will eventually fix it.
+
+TEACHER-6 DIAGNOSIS (both follow-ups run this session): the stability check
+changed the picture again, and points at a DIFFERENT fix than more protocol
+engineering.
+
+  Two-window stability check (1000ms warm-up, single pulse, 3s recorded,
+  early window 0.5-1.5s vs late window 2-3s post-pulse, teachers 0/3/6,
+  Laplacian coupling, no amplitude scaling): teacher 0's response decays
+  cleanly everywhere (ratio late/early 0.36-0.69 across 12 site/amp
+  combinations). **Teachers 3 AND 6 both show slow/non-decaying dynamics**
+  -- several site/amp combinations have ratio >= 0.9, some > 1 (growing,
+  not decaying) for BOTH teachers; teacher 3's baseline-only residual after
+  5s is actually LARGER than teacher 6's (0.451 mV vs 0.237 mV). **This
+  rules out "teacher 6 is uniquely pathological" as the explanation** --
+  by this measure teacher 3 (which the k-scale fix cleanly repaired) is
+  the more dynamically sloppy of the two, not teacher 6.
+
+  Direct Fisher/CRB comparison (scripts/identifiability.py --teacher 3 and
+  --teacher 6, Laplacian, teacher's own drawn g, same protocol bank as N1):
+  teacher 3's CRB is excellent at EVERY protocol tested, even the sparsest
+  ("1 site"): a=0.003%, c1=0.63%, c2=0.003%, c4=9.9% -- all comfortably
+  under the 20% bar with a single stimulation site. Teacher 6's CRB is
+  markedly worse at sparse protocols ("1 site": c1=24%, c2=15%, c4=18%)
+  but still clears the bar comfortably at the full design ("8 sites, 3
+  amplitudes": c1=2.5%, c2=1.7%, c3=0.72%, c4=1.7%, all <3%).
+
+  **Reinterpretation of the whole per-teacher calibration investigation:**
+  teacher 3's CRB was EXCELLENT even without any amplitude boost -- so the
+  amp-scale fix did not repair a missing-information problem for t3, it
+  repaired an OPTIMISATION problem (a weak pulse gives Adam a small
+  gradient signal, making it easy to get stuck even when the information
+  to find the true answer is already there). Teacher 6's CRB, while worse
+  at sparse protocols, is still comfortably under the 20% bar at the
+  actual training design's richness -- yet real backprop (even amplitude-
+  boosted) still fails far worse than CRB predicts. **Both teacher 3
+  (originally) and teacher 6 (still) are CRB-good-but-backprop-bad cases,
+  the exact failure mode this whole study keeps finding at every scale**
+  -- not protocol/information problems that amplitude tuning can solve
+  teacher-by-teacher, but a landscape/optimiser problem that the single-
+  node study already has a validated fix for: an ensemble of >=15-20
+  restarts, nominal-centered, lowest-loss selected (reports/
+  single_node_conclusions.pdf sections 5-6), which this network study has
+  not yet built (N0.3's flagged-but-missing wrapper).
+
+  Decision: stop tuning per-teacher amplitude heuristics as the primary
+  fix. Build and test the N0.3 ensemble/restart wrapper next -- it is now
+  doubly motivated (by t3's original failure mode AND t6's persistent
+  one), not a secondary nice-to-have. Keep the amp-scale clamp (max(1,
+  nominal_k/teacher_k)) as a complementary, cheap fix for genuinely
+  under-driven teachers, since it did not hurt the already-good ones once
+  clamped -- the two fixes address different mechanisms and are not
+  substitutes for each other.
+
+ENSEMBLE/RESTART WRAPPER: BUILT AND PILOT-TESTED (new scripts/
+recover_ensemble.py -- a lightweight aggregator, not a new simulation path:
+it reads N independent scripts/recover_clean.py runs for the same teacher
+that differ only in --init-seed, and selects the lowest-TRAINING-loss one,
+exactly reports/single_node_conclusions.pdf sections 5-6's validated
+recipe, now ported to network scale).
+
+Pilot (compute-bounded, per the standing "prefer many small runs" rule --
+a full 8-teacher x >=15-restart x 300-iteration ensemble would run many
+hours; this pilot targets only the 3 teachers still failing after the
+amplitude-clamp fix, 2-3 random restarts each, 150 iterations -- enough to
+see whether ANY restart escapes the bad basin, not yet a polished final
+answer):
+
+  Teacher 6 (worst of all 8, loss 0.0402 single-start): best of 3 random
+  restarts reaches loss 0.0017 -- a 24x improvement, and dramatically
+  better than its own other two restarts (0.064, 0.085), confirming this
+  was a stuck-basin problem, not a genuine information limit. a/b/mu/k all
+  <1%; c3*c4 = +6.9% (now comfortably under the 20% bar, was badly wrong
+  before); c1*c2 = -23.4% (much improved, just outside the bar); g still
+  -23.5% off. Train rel.RMSE 0.075 (was 0.334, a 4.4x improvement).
+  Teacher 7: best of 3 restarts reaches loss 0.0054 (was 0.0237, 4.4x
+  better), clearly improved but not yet a clean fit: c3*c4 = +56.2% and
+  c1*c2 = -38.5% still miss the bar, g still -59.5% off. Train rel.RMSE
+  0.143 (was 0.271); held-out 0.093 (was 0.200).
+  Teacher 4: only 2 restarts tried (smaller pilot). Best reaches loss
+  0.0090 (was 0.0119, modest ~25% improvement) but individual parameters
+  move in a DIFFERENT, not clearly better, direction (b +99.5%, c1
+  +91.5% -- both worse than the single start) while c3/c4 stay reasonable
+  -- looks like a different point along a sloppy-direction trade-off
+  (the same (b, c1, c2, c4) entanglement noted for the single-node study,
+  section "Mechanism behind the c1.c2/c3.c4 recovery failure",
+  2026-11-22) rather than a clean escape to a better basin. Inconclusive
+  with only 2 restarts -- needs more to judge fairly.
+
+  **Verdict: the ensemble/restart wrapper is validated as a real, working
+  fix** -- not a hypothetical one. It took the single worst teacher (t6)
+  from the bottom of the pack to a near-passing fit with just 3 cheap,
+  short (150-iteration) restarts, and meaningfully improved the second
+  worst (t7). This closes the loop opened by this session's teacher-6/
+  teacher-3 diagnosis: CRB-good-but-backprop-bad was the right call, and
+  restarts (not more protocol engineering) is the right fix for it.
+
+  Not yet done, and the natural next step: re-run the full 8-teacher N2
+  gate with the ensemble wrapper as standard (a proper ensemble size,
+  e.g. 8-10 restarts, and the full 300 iterations for a polished final
+  number, not this pilot's shortened 150) to get the REAL N2 verdict.
+  Flagging the compute cost before committing to it, per the standing
+  compute-budget rule: 8 teachers x ~8 restarts x 300 iterations, even at
+  8-way parallelism, is several hours of wall-clock (the 150-iteration,
+  2-3-restart pilot above alone took ~40 minutes) -- this should be an
+  explicit decision, not an automatic next action.
+
+CLAMPED AMPLITUDE RERUN, FINAL (all 8 teachers, amp_scale = max(1,
+nominal_k/teacher_k)): confirms the clamp did exactly what it was designed
+to do. t5 (above-nominal k, previously regressed to loss 0.0041 under
+symmetric scaling) is restored to its original baseline (loss 0.0010,
+matching the pre-scaling run to 3 significant figures) without disturbing
+t1/t3's fix (0.0031, 0.0067) or t0/t2's already-good fits. Final state:
+5/8 teachers converge well (t0, t1, t2, t3, t5); 3/8 remain stuck (t4
+0.0119, t6 0.0402 -- still the worst, t7 0.0237). Median |rel_error|:
+a 0.3% b 3.4% g 33.6% c1 37.2% c2 27.3% c3 6.5% c4 11.9% mu 2.6% k 0.3%;
+c1*c2 49.2%, c3*c4 8.0%. Train/held-out RMSE median 0.133/0.102 (best
+train median of all four designs, essentially tied with the unclamped
+version's held-out). The amp-scale clamp is now the recommended default
+for --amp-scale-by-k; the remaining 3/8 failures are the ensemble
+wrapper's job, not further amplitude engineering (see TEACHER-6 DIAGNOSIS
+above).
+
 
 6. PART N3: SCALE UP (only after N2 passes)
 ----------------------------------------------
