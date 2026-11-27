@@ -926,3 +926,220 @@ Recommended next step: proceed to Part N3 (scale-up) with Laplacian coupling as 
 default, g's recovery explicitly scoped to the range already characterized as reliable (~500-750),
 and this session's coupling-misspecification caveat carried forward into any future reporting of
 loop-gain results.
+## 2026-11-26 - CDC margins paper, S1 (theory) advanced
+
+- **Correction to control_formulation.txt section 1.1 (not edited; the file is read-only
+  for the paper workflow):** in node.py, neurofe/models/jansen_rit.py and core/diffsim.py,
+  the single-node TMS input k*u and the tonic drive p are added *outside* the tanh rate
+  bound: rE = U tanh(c2 S(c1 P)/U) + k u + p. The note says the input enters inside, which
+  is wrong. In the network code, coupling and process noise do enter inside the tanh.
+  kappa = 5e-4 ||lm|| k A / a.
+- Stimuli with to_i > 0 (EI1000, part of RICH) also drive the I channel, so the
+  small-signal response is a 1x2 transfer. The margins and the identifiability lemma
+  (eta = (kappa, a, b, lamE, lamI) is generically identifiable from T(s); needs a != b,
+  which is sharp) are unaffected. The S2 and S4 code must model the second input.
+- At the three active study points m_F is between 1.9 and 4.5 (far from the fold) and
+  m_M is between 0.09 and 0.59. **m_M is the primary margin for the paper.** H1 (CRB of
+  m_F <= 10%) is kept unchanged but is noted as lenient; S4 will report the SE of m_M
+  with equal prominence.
+- At the E-dominant point, lamE = 2.5e-4 (a pole almost cancels the zero at -a): lamE is
+  structurally identifiable but not in practice. This is consistent with the earlier
+  "E-dominant collapse" result.
+- Artifacts: syn_brain/paper/cdc_margins/theory/{theory.txt, check_symbolic.py};
+  steps/S1/round1_{worker,review,decision}.txt.
+
+## 2026-11-26 - CDC margins paper, S2 (numerical core) worker round 1
+
+- **Stability by margins = m_F > 0 AND Nyquist winding Z = 0**, not "m_F > 0 and m_M > 0".
+  m_M > 0 also holds at unstable equilibria (theory.txt F3), so the literal test disagrees
+  with the eigenvalues at every grid point where the active state is unstable (92.4%
+  agreement). code/margins.py reports a signed m_M (negative if Z != 0). With that, S2(b)
+  agrees with the eigenvalues at 100% of the 3724 grid points (4436 equilibria). This is how
+  plan.txt S2(b) is read; the threshold is not changed.
+- **S2(c), "m_M -> 0", was made operational before running** as m_M < 1e-3 at the
+  bisected boundary (segment tolerance 1e-10 of a cell). At a fold, the critical equilibria
+  are the colliding pair, whatever their stability: 19 of the 56 folds create a saddle plus
+  an unstable pair, and no stable state changes there. The first run used "min m_M over
+  stable equilibria", which wrongly marked those 19 folds as failures. Explainer class edges
+  that are not bifurcations (quiet|active by the v >= 2.5 threshold: 26 edges; active|Euler-only
+  oscillation: 7 edges) are excluded and listed.
+- The lower-p edge of the explainer's "bistable" region is a Hopf of the upper branch, not a
+  fold. There m_F is 0.46-3.1 while m_M -> 0. This is more support for m_M as the primary
+  margin.
+- **node.py note for S4:** with SETTLE_MS_DEFAULT = 1500, the balanced point (m=1, p=150;
+  damping 2.05 /s under Euler) is not fully settled. v is still 0.17 mV off the equilibrium
+  at the pulse and keeps ringing, which adds about 2% to node.py's small-pulse error there.
+  In EEG units this is about 0.02 uV at gain 250, below the 0.42 uV noise. S4 teachers near
+  the Hopf set should start at the equilibrium or settle for longer.
+- Artifacts: syn_brain/paper/cdc_margins/{code/margins.py, experiments/s2_validate.py,
+  results/s2_*.json, figures/s2_*.png, steps/S2/round1_worker.txt}.
+
+## 2026-11-26 - CDC margins paper, S2 decision (round 1): ADVANCE
+
+- S2 (a), (b), (c) pass; checked independently by the reviewer. Thresholds unchanged.
+- **Ruling on S2(b):** "m_M > 0" means the signed margin (m_F > 0 and Nyquist count Z = 0),
+  as the S1 decision required. The literal unsigned reading (92.4%) stays on record. The
+  paper must not claim that m_M > 0 alone certifies stability, and the 100% agreement is a
+  code-consistency check, not a result.
+- S2(c) accepted, with its pre-fixed operational threshold m_M < 1e-3 and the corrected
+  critical-equilibrium metric (colliding pair at folds), which was logged as post hoc.
+- **Top-2 risk for S7:** the real SP250/SP1000 pulses are strongly nonlinear (30-96% off
+  the T(s) response), so the linear identifiability lemma does not by itself cover the
+  actual protocols. S4 must state that it works in the nonlinear regime (and, if cheap,
+  add a small-amplitude arm), and the paper must state the small-signal assumption.
+- Housekeeping carried forward: caption fixes in s2 figures; file hashes in results _meta;
+  quote the full Hopf f* range of 1.3-11.2 Hz.
+- Artifact: syn_brain/paper/cdc_margins/steps/S2/round1_decision.txt.
+
+## 2026-11-26 - CDC margins paper, S3 worker (round 1): nonlinear certificate
+
+- Installed cvxpy 1.7.5 (with clarabel 0.11.1, scs 3.3.2, osqp 1.1.3) into .venv; solver CLARABEL.
+- Design choices (one line each): (1) the certified-region box uses exact chord sectors of the
+  nonlinearities on |dv| <= Rv, |dP| <= RP (two radii, since q2 = q3 = dP), not the symmetric relative
+  sectors of theory 5.4(b), which give tiny regions where a slope is saturated (E-dominant sigma_E = 0.57);
+  rho* itself is computed exactly as in 5.4(a). (2) Every LMI solution is re-verified in numpy after
+  projecting multipliers to their cones; only verified solutions count. (3) Region objective = largest
+  linearised 10 ms pulse certified, with an exponential-rate term (10% of the linear decay rate).
+- The operational falsification test (fixed before the run) flagged 2 of 23,414 initial states (one
+  equilibrium near the Hopf set, m_M = 0.011) only by "final scaled norm not below the initial one at 3 s";
+  V was monotone and the 30 s follow-up converged (transient non-normal growth). Both readings are kept in
+  results/s3_summary.json; no threshold was changed.
+- Artifacts: syn_brain/paper/cdc_margins/{code/certificate.py, experiments/s3_certificate.py,
+  results/s3_*.json, figures/s3_*.png, steps/S3/round1_worker.txt}.
+
+## 2026-11-26 - Network coupling: non-diffusive becomes the primary model (William's decision)
+
+- **Decision (William):** for physiological plausibility, the network work moves to non-diffusive
+  (rate-based) coupling, g * sum_j w_ij * S(E_j(t - tau_ij)): long-range input is the excitatory
+  firing of other regions, as in the original coupled JR columns, David & Friston and TVB.
+  The Laplacian coupling (neurofe / PyTepFit default) is kept only as the "published pipeline"
+  reference arm in the neuroscience paper (one comparison), not as the model for new claims.
+- **Why:** (1) the Laplacian self term -g*d_i*E_i is a node-self-inhibition proportional to its
+  own connectivity, with no anatomical counterpart; (2) it is a high-gain negative self-loop
+  (DC gain g*d_i*A/a ~ 23-39) that is fragile to holds and delays; the team observed network
+  instabilities with it; (3) non-diffusive coupling is a positive, bounded, monotone
+  interconnection, which also suits the control-theory line (positive-systems / diagonal-
+  stability certificates), see paper/control_formulation.txt.
+- **Noted, not yet verified:** core/diffsim.py computes the whole coupling, including the
+  instantaneous self term dg @ E, once per ms and holds it for 10 sub-steps; neurofe
+  (models/jansen_rit.py:417) updates dg @ E every sub-step. A single-loop estimate puts the
+  held self-loop's critical degree at d_i ~ 0.64 (1 ms hold) to 1.25 (0.5 ms), against actual
+  degrees of median ~0.7, max 1.0-1.2 (10-200 nodes). This may explain part of the observed
+  Laplacian instability in syn_brain runs; relevant only to the reference arm now.
+- **Known risks of the switch (from N0/N1, entries above):** at the Laplacian-calibrated
+  g = 1000 the non-diffusive input saturates (g*coupling 2000-5000); at g = 100 single-start
+  fits stuck in a bad basin. Both predate the restart wrapper and amplitude calibration.
+  Operating point now depends on node degree (mean drive g*d_i*S_bar).
+- **Variant to pilot:** centred non-diffusive coupling g * sum_j w_ij * (S(E_j(t - tau_ij)) - S_bar)
+  (S_bar = resting rate), optionally with row-normalised W (d_i = 1): zero mean input at rest
+  (no saturation at large g, degree-independent operating point) without the Laplacian
+  self-loop. Plain vs centred to be decided by the pilot below.
+- **Next:** (1) pilot on 3 teachers: Fisher bounds + restart wrapper for plain non-diffusive
+  (g ~ 100) and centred non-diffusive; stability screen of teachers; (2) choose the variant;
+  (3) rerun the 8-subject network gate with restarts under the chosen coupling. The existing
+  network gate results (Laplacian) remain valid as the reference arm.
+- Single-node work (including the CDC margins paper, paper/cdc_margins/) is unaffected.
+
+## 2026-11-26 - CDC margins S3 decision: ADVANCE; nonlinear certificate is local/small-signal
+
+- **Decision:** S3 round 1 advances; all three pass criteria met. The 2 operational 3 s flags (transient
+  non-normal norm growth, monotone V, converged at 30 s / 60 s) are ruled NOT false certificates under
+  plan.txt's definition ("diverges or oscillates"); no threshold changed.
+- **Scope for the paper:** the certified region covers pulse amplitudes ~2-37 vs 1000 for SP1000, so the
+  nonlinear certificate is local and small-signal; rho* is reported as robustness to slope uncertainty,
+  not as a certificate of the response to real TMS pulses. Region construction uses exact chord sectors
+  on an explicit box (deviation from theory 5.4(b), to be documented in S6).
+- Decision file: syn_brain/paper/cdc_margins/steps/S3/round1_decision.txt.
+
+## 2026-11-26 - CDC margins S4 (worker, round 1): precision of margins; H1 and H2 met, Laplace tails too light
+
+- **Design choices (fixed before results):** CRB from node.py's Euler simulator, 7 fitted log-parameters,
+  sigma 0.42 uV, RICH = SP250+SP1000+SP4000+PP100+TR10+EI1000 (explainer definition, not the 4-condition set
+  in laplace_calibration.py). Posterior check: 32 teachers (>= 12 required; 12 would give a calibrated method
+  only ~61% chance of landing in the [80, 98]% band), teacher = RK4 at 0.01 ms (finer step AND different
+  integrator, per CLAUDE.md) + 0.42 uV noise, 15 nominal-centred restarts x 300 Adam iterations, then an
+  added Levenberg-Marquardt polish to the MAP before Laplace (Adam-only MAP results kept alongside).
+- **Correction made before any coverage result:** the teacher filter first also required the 1.5 s settle
+  to be within 1e-3 mV of the equilibrium; that removed exactly the near-Hopf (small m_M) teachers, so it
+  was relaxed to 1 mV (stable equilibrium Z = 0, m_F > 0 is still required).
+- **Results:** H1 PASS (CRB m_F 2.3% balanced, 5.2% I-dominant, RICH). H2 PASS (m_F 90% coverage 28/32 =
+  87.5%). But the z-scores have heavy tails (sd 1.48; robust sd 0.87; one at 5.7). The misses are neither
+  optimiser failures (LM started at the truth returns the same MAP) nor dt bias (< 0.3 SE). So the Laplace
+  intervals are right for the bulk and too narrow in the tails. The paper should say so.
+- Files: syn_brain/paper/cdc_margins/steps/S4/round1_worker.txt, results/s4_*.json.
+
+## 2026-11-26 - CDC margins S4 decision (round 1): ITERATE; stationarity, Laplace step, likelihood
+
+- **Decision:** S4 does not advance yet, which is also consistent with William's request to hold and
+  review. H1 (CRB m_F 2.3% / 5.2%) and H2 (28/32) pass robustly under every variant the reviewer tried,
+  so the verdict is not in question. But the numbers that S5 and S6 will quote need three fixes first.
+- **Fix 1, settle transient:** the 1.5 s settle from zero leaves near-Hopf nodes ringing. This adds
+  artificial information. At the balanced point the RICH CRB of m_M goes 14% -> 26% and c1 goes
+  2.1% -> 6.9% once the node is stationary. Round 2 makes a stationary start (at the equilibrium, or a
+  settle >= 8 s) primary. The 1.5 s numbers become a sensitivity column.
+- **Fix 2, Laplace step:** the Laplace SEs are recomputed with finite-difference step h = 1e-4.
+  Teacher #26's miss was an artefact of h = 1e-3.
+- **Fix 3, likelihood:** SEs that account for baseline correction (correct likelihood or sandwich) are
+  reported next to the naive iid SEs, which are about 6-15% too small.
+- **Framing:** "margins are precise under a rich protocol and stay identifiable where saturation makes
+  the raw gains non-identifiable". Not "margins precise, parameters not".
+- Thresholds are unchanged. Decision file: syn_brain/paper/cdc_margins/steps/S4/round1_decision.txt.
+
+## 2026-11-27 - Audit of the N2.5 coupling conclusions: most of the Laplacian "high-g instability" is a diffsim discretisation artifact
+
+Reviewed the N2.5 entries above (g clip, U_BOUND, non-diffusive matched, mismatched) against a
+discrepancy noted on 2026-11-26: core/diffsim.py computes the Laplacian coupling, INCLUDING the
+instantaneous self term dg @ E (= -d_i E_i), once per 1 ms sample and holds it for the 10 Euler
+sub-steps; neurofe (models/jansen_rit.py ~l.417) and core/simulator.py update dg @ E every 0.1 ms
+sub-step. The self term is a high-gain negative loop (DC gain g*d_i*A/a ~ 20-40), and a 0.5-1 ms
+hold on it puts a pole pair across the imaginary axis at ~50-100 Hz once g*d_i exceeds ~600-1300.
+
+Test (scripts/diagnose_selfterm_hold.py, results/n2_5/selfterm_hold.json): the 8 N2-gate teachers'
+TRUE parameters, training protocol, held (diffsim) vs per-sub-step (neurofe) self term, with
+U_BOUND = 500 and 1e6 (no clip).
+```
+teacher  true g   held, no clip         per-sub-step, no clip   held U=500: tail g*coupl/U   sub-step U=500
+t0        523     bounded (rms 5.9)     bounded (rms 0.5)        0.24                         0.16
+t1        586     bounded (rms 15)      bounded (rms 0.7)        0.55                         0.13
+t6        750     DIVERGES (rms 1127)   bounded (rms 1.0)        0.72                         0.18
+t5        881     DIVERGES (rms 697)    bounded (rms 0.7)        0.83                         0.22
+t7       1172     DIVERGES (rms 1362)   bounded (rms 17)         1.24                         0.46
+t3       1206     DIVERGES (rms 1856)   DIVERGES (rms 826)       1.42                         0.67
+t2       1223     DIVERGES (rms 1473)   bounded (rms 6.6)        1.46                         0.55
+t4       1461     DIVERGES (rms 1521)   bounded (rms 0.4)        1.39                         0.22
+```
+(late-window rms of E-I in mV). Held-mode divergence oscillates at 56-72 Hz, as predicted for the
+held self-loop. Teacher 3 also diverges with the per-sub-step self term and at a 10x finer step
+(0.01 ms: rms 783), at ~60 Hz: a GENUINE instability (low a = 55/s, high g; delayed neighbour
+terms), not a discretisation effect. Teacher 4 is bounded at 0.01 ms too (rms 0.11).
+
+What this does to the N2.5 conclusions:
+- "Laplacian coupling has no bounded equilibrium above g ~750-1000; U_BOUND is the only thing
+  preventing divergence": NOT SOLID. True for diffsim's held implementation; false for neurofe's
+  own semantics in 6 of the 7 teachers that diverged. Genuine instability: 1/8 (teacher 3).
+- "g is biased low because the clip kills its gradient": the clip mechanism is right, but its
+  root cause is the hold artifact (tail g*coupling/U 1.2-1.5 held vs 0.2-0.7 per-sub-step).
+  The matched-Laplacian gate (teacher and student share the artifact, an inverse crime) was fit
+  on artifact-contaminated dynamics for 6/8 teachers; its numbers (including the good a, mu,
+  c3*c4) must be re-run with the corrected simulator before they are quoted as Laplacian results.
+- "Non-diffusive is less identifiable than Laplacian": NOT SOLID as a coupling comparison. The
+  non-diffusive arm is not affected by the artifact (no self term), but it is compared with an
+  artifact-affected baseline, used one fixed g = 100 for all teachers, the plain (non-centred)
+  form whose degree-dependent mean drive g*d_i*S_bar trades off against the operating point (an
+  identifiability problem the centred variant removes, never tested), and 5 restarts that the
+  adversarial review already showed are too few (loss spread 1-6 orders of magnitude).
+- "A Laplacian student mis-estimates E/I on non-diffusive data": PROBABLY SOLID qualitatively.
+  The fitted Laplacian g stayed at 9-40, far below where the artifact bites, and train/held-out
+  RMSE doubled. But its implication is the opposite of the recorded decision: if the coupling
+  form is wrong, the E/I estimates are wrong, so the coupling should be chosen on physiological
+  grounds and then made identifiable, not chosen because it is easier to fit in a matched test.
+- The 2026-11-27 decision "do not switch coupling modes" conflicts with William's 2026-11-26
+  decision (non-diffusive primary, Laplacian as reference arm; entry above, recorded locally
+  and not yet pushed when the remote session ran). It needs William's ruling.
+
+Proposed next steps (not run): (1) fix core/diffsim.py so dg @ E is updated every sub-step, add
+a regression test against core/simulator.py (which is checked against neurofe); (2) stability-
+screen teachers (exact equilibria + delayed linearisation) and redraw unstable ones; (3) rerun
+the comparison as FOUR arms on the same 8 teachers with 8-10 restarts: Laplacian (fixed),
+non-diffusive plain with drawn g, non-diffusive centred, mismatched; (4) only then decide the
+coupling. Nothing in core/ was changed by this audit.

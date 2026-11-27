@@ -1,4 +1,5 @@
-TENTATIVE PAPER DRAFT  (v0.1, 2026-11-24; updated with the Laplace calibration and the 10-node pilot)
+TENTATIVE PAPER DRAFT  (v0.2, 2026-11-26; adds the 8-subject 10-node network gate and a
+generalization summary; v0.1 added the Laplace calibration and the 10-node pilot)
 =====================================
 
 Status   : internal draft for discussion; not for circulation outside the team.
@@ -43,13 +44,17 @@ strongly on brain state: excitation-dominant columns saturate their excitatory l
 quiet-to-active transition is bistable. Richer stimulation not only tightens the bounds but makes
 the loss surface discriminative, so that the best-fitting model is also the most accurate; with
 this recipe and a Laplace posterior, loop strengths are recovered with calibrated uncertainty
-(median error 4-8%, 96% coverage of 90% intervals across 24 random subjects). At network scale
-the picture improves: with log-scaled parameters, differentiable delays and multi-site,
-multi-intensity stimulation, a 10-node network recovers its global parameters, including
-coupling strength and conduction velocity, which the published procedure cannot move. The
-failures of the published pipeline are therefore largely failures of the fitting procedure,
-and mechanistic conclusions from such fits require identifiability and robustness checks.
-[TODO: revise the network sentence after the >= 8-subject gate, realistic teacher and
+(median error 4-8%, 96% coverage of 90% intervals across 24 random subjects). At network scale,
+with log-scaled parameters, differentiable delays and multi-site, multi-intensity stimulation,
+the data determine every global parameter of a 10-node network, including coupling strength
+and conduction velocity (Fisher bounds < 3%), and fits that converge predict held-out
+stimulation sites with ~10% error. Across 8 random subjects, however, single fits converged for
+only 2 to 5 of 8: the information was present but the optimiser missed it, unless stimulation
+intensity was matched to each subject's gain and fits were restarted. The failures of the
+published pipeline are therefore largely failures of the fitting procedure, the recurring
+bottleneck at every scale is estimation rather than information, and mechanistic conclusions
+from such fits require identifiability, robustness and held-out checks.
+[TODO: revise after the full restart gate, the network posterior, a realistic teacher and
 late-window tests (section 2.8)]
 
 
@@ -208,6 +213,23 @@ late-window tests (section 2.8)]
     held-out condition removes it; extend calibration to E-dominant and near-transition states.
 
 2.8 Network scale  [FIG 8]  (pilot done; gate [TODO])
+  [NOTE 2026-11-26: all network results below use neurofe's Laplacian coupling. Decision:
+  the primary network model moves to non-diffusive (rate-based) coupling for physiological
+  plausibility (the Laplacian self term -g*d_i*E_i is node self-inhibition proportional to
+  connectivity, and the coupling showed stability problems). Laplacian results are kept as
+  the published-pipeline arm; the gate will be rerun under non-diffusive coupling
+  (docs/network_study_plan.txt N3). Paper framing: coupling form is a model choice with
+  identifiability and stability consequences; report one Laplacian vs non-diffusive table.]
+  [NOTE 2026-11-27: full gate (5 restarts, Laplacian): a 0.3%, k 0.7%, c3*c4 4.2%, mu 0.4%,
+  c1*c2 12.0%, g 27.1% (biased low for high-g teachers). Three-way comparison (matched
+  Laplacian / matched non-diffusive g=100 / mismatched): c1*c2 12 / 75 / 98%, c3*c4 4 / 9 / 54%.
+  AUDIT: core/diffsim.py held the Laplacian self term for 1 ms (neurofe updates it every
+  0.1 ms); without the clip, held -> 6/8 teachers diverge at 56-72 Hz, neurofe's update -> 1/8
+  (genuine). The g bias and the matched-Laplacian numbers are artifact-affected and will be
+  rerun (network_study_plan.txt N2.6). Robust message for the paper: a wrong coupling form
+  gives wrong E/I estimates (mismatch test). Also a methods lesson: simulator implementation
+  details (sample-and-hold of a high-gain term) can create or hide instabilities, and a matched
+  teacher-student test cannot see them.]
   - Baseline: the published procedure fails at 10 nodes. Phase 1 (neurofe's JansenRit.fit,
     tier S1, 3 teachers, single site): only k recovered (errors -2.6%, +6.3%, +0.3%); mu
     receives no gradient (integer delays); g, c1, c2 gradients ~1e4 smaller than a or k; b,
@@ -239,10 +261,53 @@ late-window tests (section 2.8)]
     Hypothesis for why networks beat the single node: strongly coupled neighbours receive
     large transient inputs that push them into the nonlinear range a quiet isolated node never
     reaches. [TODO: check by measuring sigmoid-slope excursions per node during the response]
-  - [TODO] Gate: >= 8 random subjects; held-out sites (train 6, test 2); late-window and
-    temporal hold-out (the single node's main failure); realistic teacher (neurofe-exact
-    simulator, 10x finer step, 0.42 uV sensor noise); network Laplace calibration; tier S2
-    Fisher check at 10 nodes; then 20 nodes.
+  - 8-subject gate (docs/network_study_plan.txt Part N2; reports/DECISIONS.md 24-25 Nov).
+    8 random teachers (+-50%), neurofe's Laplacian coupling, single nominal-centred start,
+    300 iterations; trained on 4 of 8 sites, other sites held out.
+      Design 1 (4 sites x 1 amplitude): medians met the pre-registered thresholds (a 0.8%,
+      k 1.2%, c3*c4 7.6%; mu progress positive for all) but only 2/8 subjects fitted their
+      training data (others' loss 1e4-1e5x worse; g off 23-111%, c1*c2 55-470%): FAIL in
+      substance, reported as such.
+      Design 2 (4 sites x 3 amplitudes): 3x more training conditions barely helped (g 30%,
+      c1*c2 57%); failures tracked the teacher's stimulation gain k drawn 45-66% below nominal
+      (Spearman rho of log k vs log loss -0.79, then -0.95).
+      Per-subject amplitude calibration (amplitude x nominal_k / k, clamped to never reduce):
+      the two most extreme low-k subjects converged (loss 0.071 -> 0.0031, 0.056 -> 0.0067);
+      final state 5/8 converge; medians a 0.3%, k 0.3%, mu 2.6%, b 3.4%, c3*c4 8.0%, c4 11.9%,
+      g 34%, c1*c2 49%; train / held-out relative RMSE 0.133 / 0.102.
+      Diagnosis: Fisher bounds for the failing subjects are good (teacher 3: c1 0.6% even with
+      one site; teacher 6: < 3% at the training design), so the remaining failures are
+      optimisation failures. Restarts (2-3 per subject, lowest training loss) took the worst
+      subject from loss 0.040 to 0.0017 (c3*c4 +6.9%); a second improved 4x; a third was
+      inconclusive.
+    Caveats: the amplitude calibration uses each subject's TRUE gain (not available on real
+    data; an observable analogue is titrating intensity to a target response, as clinical
+    motor-threshold calibration does); held-out sites are predicted better than training sites
+    in every design (likely easier sites; needs per-site normalisation); two teachers show
+    slowly decaying dynamics (teachers drawn +-50% may need a stability screen); the
+    pre-registered coverage criterion needs a network posterior that does not exist yet.
+  - [TODO] Full gate with restarts (8 subjects x 8-10 restarts x 300 iterations); network
+    Laplace posterior; observable amplitude calibration; late-window and per-site metrics;
+    realistic teacher (neurofe-exact simulator, 10x finer step, 0.42 uV sensor noise); tier S2
+    Fisher check; then 20 nodes.
+
+2.8b Does teacher-student learning generalize?  (summary across the study)
+  Generalize to ...                    Single node                      10-node network
+  other amplitudes / pulse shapes      yes: 0.5-5% (rest);              -
+    (whole response)                   up to 24% in the active state
+  other stimulation sites              -                                yes when the fit converges:
+    (whole response)                                                    2-8% (pilot), ~10% (gate)
+  the late response (> ~60 ms)         no: 5-30% even on training        not yet tested
+                                       stimuli; 46-91% when trained
+                                       on the early window only
+  another brain state                  no: 15-30% (late window)         not tested
+  Reading: fits generalize for whatever depends on well-identified quantities (stimulation
+  gain, time constants and, in the network, the global parameters), and fail for what depends
+  on poorly identified loop parameters (the late response). Per-model parameter error predicts
+  prediction error for the identifiable combinations (a rho 0.78, c3*c4 0.71, b 0.65, c1*c2
+  0.51, k 0.47) but not for individual c1 (-0.14). The network's cross-site transfer contrasts
+  with real data under the published pipeline (r ~ 0.1); the late-window test at network scale
+  is the decisive open experiment.
 
 2.9 Real data  [FIG 9]  [TODO]
   - [TODO] Ye's temporal and cross-site hold-out on the public TMS-EEG dataset (and CCEP),
@@ -267,8 +332,10 @@ late-window tests (section 2.8)]
   - Conditional: loop strengths, only as products, only in an active state, only with
     multi-condition stimulation; then recoverable with calibrated uncertainty in well-behaved
     states, but not when excitation dominates.
-  - In networks (pilot): global parameters, including coupling and conduction velocity, from
-    multi-site, multi-intensity stimulation.
+  - In networks: global parameters, including coupling and conduction velocity, are determined
+    by multi-site, multi-intensity data (Fisher < 3%); in practice recovered for most subjects
+    once intensity is matched to the subject and fits are restarted; coupling g and c1*c2 remain
+    the hardest in practice.
   - Never: synapse strength vs number (A, B vs c's), maximum firing rate, the c1-vs-c2 split.
 
 3.1b The published failures are mostly fixable.
@@ -276,6 +343,15 @@ late-window tests (section 2.8)]
     condition stimulation and single fits explain most of the published procedure's failure;
     fixing them recovers a 10-node network's global parameters in the clean case. Remaining
     open: the late window, realistic data, per-edge gains (S2/S3).
+
+3.1c Estimation, not information, is the recurring bottleneck.
+  - At every scale (single node in hard states, network across subjects) Fisher bounds said
+    the answer was in the data while single fits missed it. Two practical levers fixed it:
+    stimulation intensity matched to the subject (so the response engages the optimiser) and
+    restarts with lowest-loss selection, topped with a posterior for honest intervals.
+    System-identification initialisation (subspace methods, impulse-response realisation on
+    the near-impulse TMS responses) and multiple shooting are candidate cheaper remedies
+    (closed_loop_framework.pdf, section 2.11). [TODO: test]
 
 3.2 Implications for published mechanistic conclusions.
   - Late TEP components as network recurrence (virtual lesions): in a quiet JR column late
@@ -310,8 +386,13 @@ late-window tests (section 2.8)]
     stimulation design; reproduction of real-data generalization failures.
 
 3.5 Limitations.
-  - Network results so far: 1-2 subjects, tier S1, matched noise-free teacher (same code and
-    time step: the "inverse crime"), whole-window metrics only.
+  - Network results so far: 8 subjects with single starts plus a 3-subject restart pilot, tier
+    S1, matched noise-free teacher (same code and time step: the "inverse crime"), whole-window
+    metrics only, amplitude calibration using the true gain.
+  - Protocol feasibility: the network design uses 8 sites x 3 intensities (24 conditions), a
+    long session in practice; the single-node "rich" protocol includes injection into
+    inhibitory cells, which TMS cannot target selectively. A minimum feasible protocol is
+    future work.
   - Mostly single node; rung R0 (teacher and student share the model form) and R1 (noise);
     misspecification rungs R2-R6 not yet run.
   - One optimizer family (Adam) for the main results.
@@ -358,12 +439,18 @@ late-window tests (section 2.8)]
   Laplace posterior, 24 subjects ................. error 7.5% / 4.0%; coverage 96%; bias -6% / -3%
   10-node Fisher bounds, 8 sites x 3 amps ........ all parameters < 3% (g 0.003%, mu 0.003%)
   10-node pilot recovery ......................... a, b, g, c3, c4, mu, k < 4%; c1*c2 -17%
+  10-node gate, 8 subjects, single start ......... 2/8 converge -> 5/8 with amplitude calibration
+  ... medians after calibration .................. a, k 0.3%; mu 2.6%; c3*c4 8%; g 34%; c1*c2 49%
+  ... failure vs teacher gain k .................. Spearman rho -0.79 / -0.95
+  ... restarts on worst subject .................. loss 0.040 -> 0.0017 (24x)
+  ... held-out sites (whole window) .............. relative RMSE 0.10 (train 0.13)
 
 
 6  OPEN WORK BEFORE SUBMISSION  (estimate ~6-10 weeks)
 ------------------------------
 
-  1. Network gate: >= 8 subjects, held-out sites, late-window / temporal hold-out.        3-5 d
+  1. Network gate with restarts (8 x 8-10 x 300 it.); late-window / per-site metrics.     hours
+  1b. Observable amplitude calibration; estimation alternatives (subspace/ERA, shooting). 1 wk
   2. Realistic teacher (finer step, different integrator, sensor noise) for the network.  2-3 d
   3. Network Laplace calibration; tier S2 Fisher check at 10 nodes.                      1 wk
   4. Real-data section: Ye's hold-out analyses, published vs cleaned-up fitting.          1-2 wk
@@ -372,7 +459,8 @@ late-window tests (section 2.8)]
   7. Figure production from existing results (section 7); consistent style.              1 wk
   8. Decide authorship, framing and whether to coordinate with the original authors.     -
   Done since v0: single-node uncertainty-aware estimator (Laplace, calibrated); 10-node
-  Fisher bounds; 10-node pilot.
+  Fisher bounds; 10-node pilot; 8-subject network gate (first pass) with diagnosis,
+  amplitude calibration and a restart pilot.
   Optional: the attribution test (section 8) as part of this paper or a companion.
 
 

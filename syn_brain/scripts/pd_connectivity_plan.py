@@ -85,7 +85,7 @@ def content():
     s += [P("Connections between Jansen-Rit nodes", TITLE),
           P("A study plan toward early Parkinson's disease detection with model-based TMS-EEG", H2),
           P("syn_brain study plan · proposed 22 November 2026 · revised 24 November 2026 after the single-node "
-            "posterior and the 10-node network pilot · builds on reports/executive_summary.pdf, "
+            "posterior and the 10-node network pilot; coupling note updated 27 November · builds on reports/executive_summary.pdf, "
             "docs/network_study_plan.txt and docs/background_drive_note.txt", CAP)]
 
     s.append(P("Summary", H1))
@@ -102,7 +102,9 @@ def content():
         "the case for new connections now rests on representing PD (sign, direction, subcortical loops). This plan "
         "(1) completes the coupling ladder with the PD-relevant rungs, (2) adds a minimal "
         "cortico-basal ganglia-thalamic loop with dopamine-dependent gain, (3) measures how small a dopamine-like change "
-        "TMS-EEG can detect, and (4) quantifies how much MRI-derived priors improve identification.", BOX))
+        "TMS-EEG can detect, (4) quantifies how much MRI-derived priors improve identification, and (5) tests, and "
+        "builds on, the observer–controller formulation of cortico-subcortical loops developed by Zheng Wang and "
+        "colleagues (sections 9–10, added 24 Nov).", BOX))
 
     # ------------------------------------------------------------- 1
     s.append(P("1  Why the connection question matters", H1))
@@ -127,7 +129,11 @@ def content():
         "neurofe couples nodes through the excitatory population with a delayed Laplacian: input<sub>i</sub> = "
         "g·Σ<sub>j</sub> w<sub>ij</sub>·(E<sub>j</sub>(t − d<sub>ij</sub>) − E<sub>i</sub>(t)), with w the "
         "log-normalised, symmetric diffusion-MRI connectome, d = tract length / conduction velocity, and zero-mean "
-        "noise as the only other input."))
+        "noise as the only other input. <b>Update 27 November:</b> the network study now supports the change argued "
+        "for here: a Laplacian model fitted to data generated with rate coupling recovers E/I badly (c1·c2 98%, "
+        "c3·c4 54% median error), so the coupling form must be chosen on physiological grounds. The apparent "
+        "high-coupling instability of the Laplacian was mostly a discretisation artifact in our simulator "
+        "(executive_summary.pdf); the coupling comparison is being rerun."))
     rows = [["Aspect", "neurofe now", "Needed for PD-type mechanisms"],
             ["What is transmitted", "a membrane-potential-like state E (can be negative)",
              "firing rate S(E) (positive), so connected nodes drive each other"],
@@ -191,7 +197,12 @@ def content():
                                                                   "protocol"],
             ["Q4", "Which MRI-derived measures, used as priors, most improve identification of the disease parameters?",
              "Concrete joint MRI + TMS-EEG protocol", "MRI and TMS-EEG inform different parameters; keep them "
-                                                     "separate"]]
+                                                     "separate"],
+            ["Q5", "Can the observer–controller indices (observer vs controller gains, basal ganglia route weight, "
+                   "K_norm / L_norm) be recovered, and do they track dopaminergic loop gain?",
+             "A compact, interpretable PD read-out that also takes MRI priors", "They are summaries of the fit, not "
+                                                                                "measurements; use the JR loop "
+                                                                                "parameters instead"]]
     s += [table(rows, [0.05, 0.43, 0.26, 0.26]), P("Table 3. Questions and what each answer implies.", CAP)]
 
     # ------------------------------------------------------------- 5
@@ -304,7 +315,100 @@ def content():
     ])
 
     # ------------------------------------------------------------- 9
-    s.append(P("9  Methods and code", H1))
+    # ------------------------------------------------------------- 9 (new)
+    s.append(PageBreak())
+    s.append(P("9  The observer–controller work (Zheng Wang et al.): what it offers, what it needs", H1))
+    s.append(P(
+        "Zheng Wang and colleagues model the cortex as a 'plant' and thalamus plus basal ganglia (and in one version the "
+        "cerebellum) as an <b>observer–controller</b>: subcortex receives a view of cortical activity through "
+        "cortex→subcortex connections, estimates the cortical state (a Kalman-type observer gain L), and feeds back "
+        "corrections (controller gains K). This is an attractive formalism for this plan: it is about exactly the "
+        "loops PD disrupts, it uses MRI connectivity to define the observation channels, and it proposes "
+        "interpretable summary indices. Five manuscripts and a product deck were reviewed (unpublished drafts in "
+        "literature/, not for distribution)."))
+    rows = [["Document", "What it does", "Data and fit", "Key results"],
+            ["LCF (3 versions; latest LCF_HCP_1p_final)",
+             "Linear cortical plant; thalamus + BG as one observer (Kalman gain L, Ks = L·Bs·R⁻¹) and a cortical "
+             "controller Kc (LQR); model FC from the closed-loop Lyapunov equation",
+             "HCP, 100 subjects, Schaefer-200 + 31 subcortical; static resting fMRI FC; gains from Riccati/LQR with "
+             "fixed cost weights (grid-searched)",
+             "FC fit r ≈ 0.82; time-split test r 0.76; Bs = 0 null 0.80 → 0.21; Kc ≈ inverse SC degree "
+             "(r ≈ −0.96)"],
+            ["CRRP", "Three nested observer routes (thalamus ⊂ BG ⊂ cerebellum); a per-parcel thalamus/BG mixing weight "
+                     "g learned online against the cerebellar estimate",
+             "HCP, ~200 subjects; target drift A* from each subject's FC (inverse Lyapunov)",
+             "FC fit r 0.76; route energies THA < BG < CB; Allocation 0.379 vs 0.370 shuffled"],
+            ["CRRP-RL", "Route weights (simplex) in a reinforcement-learning agent; BG as value/prediction-error route",
+             "Simulation only (100 seeds)", "Faster early learning; slower reversal; BG weight grows with training"],
+            ["Sleep digital-twin deck", "Observer-based EEG engine; biomarkers K_norm (regulation effort), L_norm "
+                                        "(observer efficiency)", "Meditation EEG (details not given)",
+             "'AUC up to 0.965' distinguishing regulated states"]]
+    s += [table(rows, [0.17, 0.31, 0.27, 0.25], font=7.0),
+          P("Table 6b. The observer–controller documents (as reported by the authors).", CAP)]
+    s.append(P("Assessment through this study's identifiability lens", H2))
+    s += bullets([
+        "<b>What it offers.</b> A principled way to describe cortico-subcortical loops as estimation and control; MRI "
+        "connectivity defines the observation channels (a natural Part 4 prior); route-specific (thalamic, basal "
+        "ganglia, cerebellar) quantities that map onto PD hypotheses; reproducible SC-derived gain maps (split-half "
+        "r 0.69 for Kc).",
+        "<b>The observer-vs-controller split is not identifiable from static FC.</b> Model FC depends only on the "
+        "closed-loop operator Acl = Ac + Kc − Ks·Bsᵀ, so any split of the same Acl between cortical and subcortical "
+        "feedback gives the same FC; the division of labour is set by the chosen cost weights. Consistent with this, "
+        "the cortex-only model fits slightly better than the full model.",
+        "<b>Correlation-based FC cannot fix absolute gain magnitudes</b> (it is invariant to scaling Σ and Q), so "
+        "'energies', stability margins and un-normalised K or L are not measurable from FC; normalised indices "
+        "(K_norm, L_norm) need their own identifiability check before use as biomarkers.",
+        "<b>Fits are partly circular.</b> In CRRP the target drift is built from the same FC it is scored against; "
+        "in LCF the gains follow from SC and fixed costs (Kc ≈ inverse degree), so high FC correlation mostly reflects "
+        "the construction. Validation is within-run (time-split); there is no synthetic ground-truth recovery, "
+        "cross-session test–retest, or subject-swap control.",
+        "<b>Points to clarify with the authors</b>: the Bs = 0 null (r 0.21) and the cortex-only model (best fit) "
+        "appear to describe the same closed loop; the closed-loop operator is stated rather than derived (a full "
+        "observer-based loop has twice the state dimension); route orderings persist after shuffling (built in by "
+        "nesting); CRRP's mixing weight g is weakly constrained (route estimates differ by ~10⁻⁶).",
+        "<b>Not yet about PD.</b> No dopamine parameter, no direct/indirect pathway signs, thalamus and BG pooled in "
+        "the main model, no EEG/TMS-EEG or patient data.",
+        "<b>The same lesson as our study:</b> a good fit does not identify the gains. The remedy is also the same: "
+        "perturbational, multi-condition data and explicit identifiability tests, which this plan can supply.",
+    ])
+
+    # ------------------------------------------------------------- 10 (new)
+    s.append(P("10  Part 5: observer–controller identifiability and its link to the PD loop (Q5)", H1))
+    s.append(P(
+        "Aim: turn the observer–controller indices into quantities that are provably recoverable, and give them a "
+        "mechanistic meaning in the PD loop of Part 2. Uses the teacher–student and Fisher/Laplace tools already "
+        "validated in this study."))
+    rows = [["ID", "Experiment", "Question"],
+            ["O1", "Synthetic observer–controller teachers with known L, Kc, Ks and route weights; generate (a) static "
+                   "FC, (b) multi-site stimulation-evoked responses, (c) both with a dopamine-like change in the BG "
+                   "route; refit with the authors' procedure and with a Laplace posterior",
+             "Which indices are identifiable from FC (expected: only the closed loop) vs from perturbational data?"],
+            ["O2", "Linearise the Part 2 JR + basal-ganglia loop around its operating point and express it as an "
+                   "observer–controller; read off L and K as functions of δ (dopamine gain), STN–GPe coupling and "
+                   "cortical parameters",
+             "Do Ks / K_norm / L_norm track δ monotonically and specifically (vs atrophy D3 and cortical change D5)?"],
+            ["O3", "Fisher-based protocol design: choose stimulation sites (cortical, and DBS-like subcortical in "
+                   "synthetic data) and ON/OFF-medication contrasts that make the BG route identifiable",
+             "Minimum protocol that identifies the BG route and δ"],
+            ["O4", "Product gate for K_norm / L_norm (sleep / meditation engine): synthetic recovery + test–retest on "
+                   "repeated recordings, before any biomarker claim",
+             "Are the deck's indices reliable quantities or fit-dependent summaries?"]]
+    s += [table(rows, [0.06, 0.58, 0.36], font=7.1),
+          P("Table 6c. Part 5 experiments. Pass criteria Q5 are in section 12, fixed before running.", CAP)]
+    s += bullets([
+        "<b>Expected outcome (stated now so it can be falsified):</b> from static FC only the closed-loop operator is "
+        "identifiable; the observer/controller split and route weights need perturbations (stimulation, medication "
+        "state). With multi-site stimulation, the BG route weight becomes identifiable to the extent that BG output "
+        "reaches the stimulated cortical sites through the thalamus.",
+        "<b>Why this matters for PD:</b> if O2 shows a monotonic, specific link between δ and an observer index, the "
+        "observer formulation becomes a compact, interpretable read-out of dopaminergic loop gain: a candidate early "
+        "PD marker that can also absorb MRI priors through the observation channels.",
+        "<b>Questions for Zheng and colleagues:</b> the exact construction of Ac and A*; whether Kc and L are re-solved "
+        "in the Bs = 0 null; the closed-loop derivation; how K_norm and L_norm are normalised; and the meditation data "
+        "behind the deck. Ideally run O1 jointly.",
+    ])
+
+    s.append(P("11  Methods and code", H1))
     s += bullets([
         "Reuse: core/node.py (JR node, programmable stimulation, tonic drive); core/diffsim.py (network, fractional "
         "delays, log-scaled parameters, coupling_mode switch for L0/L2); scripts/identifiability.py and "
@@ -318,18 +422,24 @@ def content():
     ])
 
     # ------------------------------------------------------------- 10
-    s.append(P("10  Pass criteria (to agree before running)", H1))
+    s.append(P("12  Pass criteria (to agree before running)", H1))
     rows = [["Item", "Passes if"],
             ["Q1 coupling form", "active operating point; late/early GMFA ratio within the real-data range; coupling "
                                  "bounds &lt; 20%"],
             ["Q2 loop identifiability", "δ bound &lt; 25% from cortical TMS-EEG alone in the active state"],
             ["Q3 detectability", "|δ| = 0.10 detected (d' &gt; 2) with ≤ 200 trials, correctly attributed in ≥ 8 of 10 "
                                  "fits, with D3 and D5 not misattributed to δ"],
-            ["Q4 MRI priors", "at least one MRI prior halves the δ bound or the minimum detectable effect"]]
+            ["Q4 MRI priors", "at least one MRI prior halves the δ bound or the minimum detectable effect"],
+            ["Q5 observer split", "from perturbational data (multi-site stimulation, ± dopamine change), the "
+                                  "observer-vs-controller split and the BG route weight are recovered within 25% in "
+                                  "≥ 8 of 10 synthetic subjects, with 90% intervals covering 80–98%; from static FC "
+                                  "alone this is expected to fail (negative control)"],
+            ["Q5 biomarkers", "normalised gains (K_norm, L_norm) recovered within 20% in synthetic data and, on real "
+                              "data, test–retest ICC ≥ 0.7 across sessions"]]
     s += [table(rows, [0.25, 0.75]), P("Table 7. Proposed thresholds.", CAP)]
 
     # ------------------------------------------------------------- 11
-    s.append(P("11  Schedule", H1))
+    s.append(P("13  Schedule", H1))
     rows = [["Weeks", "Work", "Gate"],
             ["1–2", "Prerequisite shared with the main study: the 10-node gate (≥ 8 subjects, held-out sites, late "
                     "window, realistic teacher). In parallel: L3 (signed, directed) at 10 nodes; late/early TEP ratio "
@@ -340,11 +450,13 @@ def content():
              "Minimum detectable effect"],
             ["7", "MRI priors (Q4) with the MRI collaborator's input on measures and their reliability",
              "Ranked MRI measures"],
-            ["8", "Write-up; proposed neurofe coupling change; plan for real data", "—"]]
+            ["8", "Part 5 (O1–O3): observer–controller identifiability from FC vs perturbational data; link to "
+                  "the JR/BG loop (can start in parallel with weeks 3–6)", "Q5 verdict"],
+            ["9", "Write-up; proposed neurofe coupling change; plan for real data", "—"]]
     s += [table(rows, [0.08, 0.64, 0.28]), P("Table 8. Schedule (estimate, one person, CPU).", CAP)]
 
     # ------------------------------------------------------------- 12
-    s.append(P("12  Risks and limitations", H1))
+    s.append(P("14  Risks and limitations", H1))
     s += bullets([
         "Neural-mass models of subcortical nuclei are coarse; results show what is possible in principle, not that a "
         "real PD marker exists.",
@@ -357,7 +469,7 @@ def content():
     ])
 
     # ------------------------------------------------------------- 13
-    s.append(P("13  Questions for the MRI collaborator", H1))
+    s.append(P("15  Questions for the MRI collaborator", H1))
     s += bullets([
         "Which MRI markers do you consider most reliable for early PD, and at what stage do they change?",
         "Is there a quantitative relation between any of them and nigrostriatal dopamine function (e.g. against "

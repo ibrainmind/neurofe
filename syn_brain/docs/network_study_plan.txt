@@ -1192,3 +1192,44 @@ fails, it will not be possible to tell whether tier or scale was the cause.
                                           fit N2-gate results used for N2.5's
                                           second analysis (per-teacher g
                                           truth/start/fitted pattern)
+
+
+======================================================================
+UPDATE 2026-11-26: COUPLING DECISION (see reports/DECISIONS.md)
+======================================================================
+  Primary coupling from now on: NON-DIFFUSIVE (rate-based),
+    g * sum_j w_ij * S(E_j(t - tau_ij))   [coupling_mode="non_diffusive"]
+  with a centred variant to pilot,
+    g * sum_j w_ij * (S(E_j(t - tau_ij)) - S_bar), optionally row-normalised W.
+  Laplacian ("laplacian") is kept only as the published-pipeline reference
+  arm; the N1/N2 results above stay valid for that arm.
+
+  New steps:
+  N3.0  Add the centred variant to core/diffsim.py (new coupling_mode,
+        default unchanged); unit check: zero coupling input at rest.
+  N3.1  Teacher stability screen under each coupling (equilibrium +
+        linearised eigenvalues with delays, plus a 2 s free run); drop or
+        redraw unstable teachers, report how many.
+  N3.2  Pilot, 3 teachers x {non_diffusive g~100, centred g in 100-1000}:
+        Fisher bounds (identifiability.py pattern) and the restart wrapper
+        (8-10 restarts, per-teacher amplitude calibration). Pick the
+        variant with the better recovery at equal compute.
+  N3.3  Rerun the 8-subject gate with restarts under the chosen coupling;
+        same pass criteria as N2 (thresholds unchanged).
+  N3.4  One comparison table Laplacian vs chosen coupling for the paper.
+
+
+======================================================================
+AUDIT 2026-11-27: SELF-TERM HOLD ARTIFACT (see reports/DECISIONS.md)
+======================================================================
+  diffsim holds the Laplacian self term dg @ E for 1 ms; neurofe and
+  core/simulator.py update it every 0.1 ms. Replaying the 8 gate teachers
+  without the clip: held -> 6/8 diverge (56-72 Hz); per-sub-step -> 1/8
+  (teacher 3, genuine, also at 0.01 ms). The N2.5 "no bounded equilibrium
+  at high g" and the g-bias mechanism are mostly this artifact; the
+  matched-Laplacian gate numbers and the three-way comparison must be
+  rerun before they decide the coupling.
+  Steps: N2.6a fix diffsim (dg @ E per sub-step) + regression test vs
+  core/simulator.py; N2.6b teacher stability screen; N2.6c four-arm rerun
+  (Laplacian fixed / non-diffusive plain, drawn g / non-diffusive centred
+  / mismatched), 8 teachers x 8-10 restarts; N2.6d coupling decision.
