@@ -47,7 +47,18 @@ def main():
     ap.add_argument("--iters", type=int, default=200)
     ap.add_argument("--lr", type=float, default=0.03)
     ap.add_argument("--integer-delays", action="store_true")
-    ap.add_argument("--coupling-mode", default="laplacian", choices=["laplacian", "non_diffusive"])
+    ap.add_argument("--coupling-mode", default="laplacian", choices=["laplacian", "non_diffusive"],
+                     help="TEACHER's coupling mode -- the actual data-generating process")
+    ap.add_argument("--student-coupling-mode", default=None, choices=["laplacian", "non_diffusive"],
+                     help="STUDENT's assumed coupling mode when fitting; defaults to match "
+                          "--coupling-mode (the usual case). Set differently to test model "
+                          "misspecification robustness -- e.g. a non_diffusive (bounded, more "
+                          "physiologically plausible) teacher fit by a laplacian student, matching "
+                          "what neurofe's real framework actually assumes. NOTE: g is not a shared "
+                          "quantity across coupling modes (different coupling functions entirely) "
+                          "-- when mismatched, g's 'truth'/'rel_error' in the output is NOT a "
+                          "recovery metric, only the student's own fitted value for inspection; "
+                          "a, b, c1-c4, mu, k ARE node-intrinsic and still have a shared ground truth.")
     ap.add_argument("--g-override", type=float, default=None,
                     help="use this g instead of the teacher's own drawn value (see identifiability.py "
                          "N0.2 note: nominal g saturates U_BOUND under non_diffusive coupling)")
@@ -62,10 +73,13 @@ def main():
     ap.add_argument("--threads", type=int, default=1)
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
+    student_coupling_mode = args.student_coupling_mode or args.coupling_mode
+    mismatched = student_coupling_mode != args.coupling_mode
     amps_tag = "-".join(str(int(a)) for a in args.amps)
     run = (f"n{args.n_nodes}_s{args.sites}_a{amps_tag}_init{args.init_seed}"
            f"{'_intdel' if args.integer_delays else ''}{'_nowarmgrad' if args.grad_warmup < 0 else ''}"
            f"{'_' + args.coupling_mode if args.coupling_mode != 'laplacian' else ''}"
+           f"{'_stu' + student_coupling_mode if mismatched else ''}"
            f"{'_g' + f'{args.g_override:g}' if args.g_override is not None else ''}"
            f"{'_kscale' if args.amp_scale_by_k else ''}"
            f"{args.tag}_t{args.teacher_seed}")
@@ -108,9 +122,12 @@ def main():
         z0 = np.random.default_rng(args.init_seed).uniform(np.log(0.5), np.log(1.5), len(NAMES))
     log.info("truth log-offsets: %s", " ".join(f"{n}={v:+.2f}" for n, v in zip(NAMES, truth_z)))
     log.info("start log-offsets: %s", " ".join(f"{n}={v:+.2f}" for n, v in zip(NAMES, z0)))
+    if mismatched:
+        log.info("MISMATCHED coupling: teacher=%s, student=%s -- g has no shared ground truth here",
+                  args.coupling_mode, student_coupling_mode)
 
     res = fit(target, net, train, NAMES, z0=z0, iters=args.iters, lr=args.lr,
-              integer_delays=args.integer_delays, coupling_mode=args.coupling_mode,
+              integer_delays=args.integer_delays, coupling_mode=student_coupling_mode,
               grad_warmup_ms=None if args.grad_warmup < 0 else args.grad_warmup,
               log=log, truth_z=truth_z)
     zf = res["z"][-1]
@@ -132,9 +149,9 @@ def main():
         z_start[ds.PARAM_NAMES.index(n)] = float(z0[i])
     with torch.no_grad():
         stud_full = ds.run(ds.theta_from_z(zs), net, full, noise_scale=0.0, integer_delays=args.integer_delays,
-                           coupling_mode=args.coupling_mode)[:, 0]
+                           coupling_mode=student_coupling_mode)[:, 0]
         start_full = ds.run(ds.theta_from_z(z_start), net, full, noise_scale=0.0, integer_delays=args.integer_delays,
-                            coupling_mode=args.coupling_mode)[:, 0]
+                            coupling_mode=student_coupling_mode)[:, 0]
     err_stud = rel_rmse(stud_full, teach_full)
     err_start = rel_rmse(start_full, teach_full)
     is_train = np.zeros(len(err_stud), bool)
@@ -152,6 +169,8 @@ def main():
              gen["heldout_rel_rmse"] or np.nan, gen["start_heldout_rel_rmse"] or np.nan)
 
     save_json({"run": run, "args": vars(args), "names": NAMES, "truth": truth, "recovery": rec,
+               "teacher_coupling_mode": args.coupling_mode, "student_coupling_mode": student_coupling_mode,
+               "mismatched_coupling": mismatched,
                "median_abs_rel_error": float(np.median(np.abs(rel_err))),
                "n_within_10pct": int((np.abs(rel_err) <= 0.10).sum()),
                "loss": res["loss"], "z_history": res["z"], "truth_z": truth_z, "z0": z0,

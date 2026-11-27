@@ -653,6 +653,117 @@ answer):
   2-3-restart pilot above alone took ~40 minutes) -- this should be an
   explicit decision, not an automatic next action.
 
+FULL N2 GATE, FINAL VERDICT (2026-11-26, William's go-ahead): 8 teachers,
+5-restart ensemble each (the reused clamped single start + 4 fresh random
+restarts, seeds 10-13), full 300 iterations, Laplacian coupling, amp-scale
+clamp on, 4-of-8 sites x all 3 amplitudes training, other 4 sites held
+out, lowest-TRAINING-loss restart selected per teacher
+(scripts/recover_ensemble.py).
+
+  Median |rel_error| across 8 teachers (ensemble-selected best restart):
+    a 0.3%   b 1.5%   g 27.1%   c1 34.3%   c2 26.6%   c3 1.5%   c4 5.8%
+    mu 0.4%   k 0.7%
+    c1*c2 = 12.0%   c3*c4 = 4.2%
+  mu progress: all 8 positive, median +1.01 (every teacher converges
+  essentially fully to its true mu -- the parameter with zero gradient in
+  neurofe's real Phase 1 is now reliably recovered).
+  Train rel. RMSE median 0.078; held-out median 0.068 (held-out <= train
+  for several teachers -- consistent with a well-generalising fit, not an
+  artifact, since this design holds out whole SITES, which can be
+  individually easier or harder than the training sites by chance).
+
+  Against the plan's own pre-registered pass criteria (section "PASS
+  CRITERIA SUMMARY" / Part N2): median |error| <20% for k (0.7%), a
+  (0.3%), and c3*c4 (4.2%) -- all clear. mu shows positive progress in
+  every teacher -- clear. **VERDICT: PASS on these three named criteria**,
+  by a comfortable margin, not a borderline/technical pass like the
+  earlier attempts in this investigation.
+
+  **Correction (2026-11-26, after adversarial review -- see
+  reports/DECISIONS.md "Adversarial review of the N2 verdict" for the full
+  critique): the headline should NOT be read as an unqualified "PASS."**
+  An independent review agent re-derived every number above from the raw
+  JSON (all confirmed correct) but found the verdict as first written
+  understated how much is still unresolved. Corrected picture:
+
+  Three things the gate did not cover, not two -- all flagged explicitly:
+  1. **g fails badly and is not one of the three named gate parameters.**
+     Median |error| 27.1%. Signed error is negative (under-estimated) in
+     6/8 teachers, but only 5 of those 6 fall in the 21-65% magnitude band
+     quoted in an earlier draft of this entry (t1 is -5.1%, smaller than
+     stated) -- corrected here rather than left as a minor but real
+     misquote. The direction of the error (low-true-g teachers converge
+     well, high-true-g teachers are pulled toward a much lower, narrower
+     band) is real and is now the subject of Part N2.5 below. "PASS"
+     certifies loop-gain and conduction-delay recovery, NOT
+     network-coupling-strength recovery -- the parameter central to this
+     whole investigation's original engagement question.
+  2. **No Laplace/credible-interval coverage check was run at network
+     scale.** This result is point estimates only, with no calibrated
+     uncertainty -- a model accurate on average but over/under-confident
+     would look identical to this table.
+  3. **No oscillation-stability check was run on the fitted student
+     networks** (added by the adversarial review -- this is itself a
+     NAMED criterion in "PASS CRITERIA SUMMARY": "N2 ... no uncontrolled
+     oscillation"). Every stability check this session (N0.2, the
+     teacher-6 two-window check) was run on TEACHER parameter draws before
+     fitting, never on the FITTED student parameters afterward. This gate
+     has not actually been evaluated, not just incompletely covered --
+     flagged as open, not assumed benign.
+
+  **Ensemble size (5 restarts/teacher) is demonstrably too small to trust
+  the reported numbers as close to each teacher's true optimum**, not just
+  smaller than the single-node study's validated 15-20: the loss across
+  each teacher's 5 restarts spans 1 to 6 orders of magnitude (e.g. t0:
+  1.5e-8 to 1.8e-2, a 1.2 million-fold range; t6: 1.4e-3 to 4.0e-2, 28x) --
+  not a tight cluster around a shared optimum. For the three teachers the
+  plan already calls weakest (t4, t6, t7), even the best of 5 restarts
+  tops out near loss 0.01, far from t0's 1.5e-8. This is direct evidence
+  from the study's own data, not a hypothetical, that more restarts would
+  likely change several of these numbers -- especially g and c1*c2,
+  dominated by the worst-converging teachers.
+
+  **A second, previously unflagged leak of ground-truth information**:
+  `--amp-scale-by-k` sets the delivered stimulus amplitude using the
+  TEACHER'S OWN TRUE k (`amp_scale = max(1, nominal_k/teacher_k)`) --
+  real EEG data never gives you a patient's true stimulus-response gain in
+  advance; that is one of the things being estimated. This is the same
+  category of leak the 2026-11-24 Laplace-calibration entry explicitly
+  caught and corrected for restart-centering (nominal-centered, not
+  truth-centered) -- it was not caught here. Does not invalidate the
+  result (k itself is still well-recovered regardless), but means the
+  amplitude PROTOCOL used to get this result is not yet something a real
+  experiment could reproduce without already knowing the answer; a
+  real-world version would need a k-estimation pre-step or a
+  richer-but-oracle-free protocol.
+
+  **Retracted claim**: c1*c2's 12.0% network-level median error was
+  originally reported here as "better recovered than at any single-node
+  operating point tested in reports/single_node_conclusions.pdf." **This
+  is false and is retracted.** DECISIONS.md's own 2026-11-23 entry reports
+  3.1% c1*c2 error (one well-behaved teacher, RICH protocol, 20 restarts)
+  and the 2026-11-24 entry reports a 24-teacher population median of
+  7.5% -- both already in this project's own records, both better (lower)
+  than the network's 12.0%, and the comparison additionally isn't
+  apples-to-apples (24 screened, dynamically-safe single-node teachers
+  with 15-20 restarts each vs. 8 unscreened network teachers with 5
+  restarts each and the oracle-informed amplitude protocol above). Kept
+  here, struck through in spirit, so the error and its correction are both
+  on the record rather than silently deleted.
+
+  **Honest restatement of the verdict**: partial pass. k, a, and c3*c4
+  recovery is well-established at network scale (median errors all under
+  1%). g (network coupling strength) is not reliably recovered (median
+  27%, biased, attractor-like) and c1*c2's 12.0% should be read as
+  provisional given the undersized ensemble, not as a new best result.
+  Three things remain to be done before this phase can be called
+  genuinely complete: explain and resolve g's bias (Part N2.5, next),
+  check oscillation stability on the fitted networks (not just the
+  teachers), and either enlarge the ensemble or otherwise justify 5
+  restarts as sufficient. Treat this as "the single-node-identifiable
+  parameters survive at network scale," not "network-scale JR
+  identifiability is solved."
+
 CLAMPED AMPLITUDE RERUN, FINAL (all 8 teachers, amp_scale = max(1,
 nominal_k/teacher_k)): confirms the clamp did exactly what it was designed
 to do. t5 (above-nominal k, previously regressed to loss 0.0041 under
@@ -670,8 +781,301 @@ wrapper's job, not further amplitude engineering (see TEACHER-6 DIAGNOSIS
 above).
 
 
-6. PART N3: SCALE UP (only after N2 passes)
-----------------------------------------------
+6. PART N2.5: DIAGNOSE g's SYSTEMATIC BIAS (decided 2026-11-26, before N3)
+---------------------------------------------------------------------------
+
+Aim
+  N2 passed its three named criteria, but g (median |error| 27.1%, biased
+  low in 6/8 teachers) was flagged, not resolved. Before spending compute on
+  N3 (scale up) or building the missing network-scale Laplace calibration,
+  find out WHY g fails -- this plan's own N1/N2 structure already showed
+  (teacher 3, teacher 6) that "CRB-good-but-backprop-bad" is the single most
+  recurring failure mode in this whole study, and g looks like another
+  instance of it, not a new kind of problem. See reports/DECISIONS.md
+  2026-11-26 ("Holistic review after the N2 pass") for the full reasoning.
+
+Findings that motivate this (from already-saved data, no new compute)
+  1. g is NOT a sloppy/degenerate direction locally: the nominal-teacher
+     Fisher table (results/identifiability/nominal.json, "8 sites, 3
+     amplitudes") gives g a CRB of 0.0033% -- the best-identified parameter
+     in the table -- with only modest correlations to other parameters
+     (|corr| <= 0.54) and near-zero loading on either of the two softest
+     eigendirections (those are dominated by c1/c2/c3/c4, as single-node
+     work already found). This rules out "not enough information" as the
+     cause.
+  2. The 8 already-saved N2-gate ensemble fits (results/recovery_ensemble/
+     *_N2full_ens_t*.json) show a clear directional pattern, not scatter:
+     the 3 teachers with the LOWEST true g (523, 586, 750) all converge
+     close to truth; the 4 with the HIGHEST true g (1172-1461) all converge
+     to a much narrower, much LOWER band (482-813) regardless of which
+     direction their restart started from (e.g. t4 started at 1219, already
+     close to its truth of 1461, and was pulled DOWN to 505). This looks
+     like an attractor around g~500-800 pulling high-g fits down, not noise.
+  3. Mechanism hypothesis, grounded in a bug this plan already found once
+     (N0.3): core/diffsim.py's step_ms computes
+     rE = noise + g*coupling + c2*E_s, then clips with
+     rE_bd = U_BOUND*tanh(rE/U_BOUND), U_BOUND=500 -- the exact clip that
+     silently killed non_diffusive coupling's gradients at the teacher's
+     nominal g=1000 (N0.3). Laplacian coupling is zero-mean at rest so this
+     was not suspected there, but during a stimulation pulse (the only time
+     g's gradient is exercised) g*coupling for a HIGH true g could
+     intermittently push rE past the clip for some node/timestep, locally
+     killing d(rE_bd)/dg in exactly the direction that would produce "fits
+     prefer a lower g than the truth whenever the truth is high." Not yet
+     checked directly.
+
+Task: DONE (2026-11-26, via new syn_brain/scripts/diagnose_g_clip.py -- an
+instrumented reimplementation of diffsim.py's step_ms, verified byte-for-
+byte equivalent to the real ds.run() before trusting its numbers, since a
+first pass gave implausible values that turned out to be a genuine (very
+large, very brief) transient, not a bug -- see verification note below).
+
+RESULT: CLIP CONFIRMED, with much more precise evidence than a yes/no
+check. Replayed each teacher's own TRUE parameters through the exact
+training protocol (4 of 8 sites x 3 amplitudes), computed the clip's local
+gradient-survival factor (sech^2(rE/U_BOUND), i.e. how much of d(loss)/dg
+actually gets through the tanh clip -- 1.0 = undamped, 0.0 = dead),
+averaged over the settled post-transient window (t=150-400ms):
+
+  teacher  true_g   mean grad-survival   g rel.error (N2 gate)
+  t0        523.0         0.835              +0.0%
+  t1        585.8         0.686              -5.1%
+  t6        750.0         0.604              -20.8%
+  t5        880.7         0.551              +20.6%
+  t2       1223.1         0.385              -33.5%
+  t3       1205.8         0.377              -48.4%
+  t7       1172.4         0.427              -58.9%
+  t4       1461.4         0.424              -65.4%
+
+  Spearman true_g vs. grad-survival: rho=-0.90 (p=0.002) -- higher true g
+  mechanically produces more clip attenuation, exactly as the hypothesis
+  predicted (g directly scales the term being clipped).
+  Spearman grad-survival vs. |g rel.error|: rho=-0.79 (p=0.02) -- less
+  surviving gradient predicts worse recovery.
+  Spearman true_g vs. |g rel.error|: rho=0.88 (p=0.004) -- and so, as the
+  direct, observable consequence, higher true g predicts worse recovery.
+
+  There is also a large, brief TRANSIENT the first analysis almost
+  mistook for a bug: g*coupling spikes to 5-600x U_BOUND for ~10-20ms
+  immediately after the pulse (e.g. teacher 0 -- the BEST-recovering
+  teacher -- hits |g*coupling|=147,649 at the pulse's end), then decays
+  over ~150ms into the settled regime the table above measures. This
+  transient occurs for every teacher regardless of true g (confirmed by
+  direct comparison against real ds.run()'s output EEG, which stays sane
+  throughout -- the clip is doing its job of keeping the forward
+  simulation bounded even during this spike; it is the GRADIENT through
+  that bounded output that dies). The settled-window numbers above, not
+  the transient, are what distinguish teachers from each other.
+
+  **Verification note (so this isn't trusted on a first implausible
+  number):** the reimplementation was checked against real ds.run()'s
+  actual output EEG for teacher 0 (max|EEG|=29.9, no NaN, fully sane)
+  before trusting the instrumented numbers -- the apparent "bug" (rE in
+  the hundreds of thousands) turned out to be this real, large, brief
+  transient, not an implementation error. Recorded here because the
+  instinct to assume a bug was initially correct methodology, and the
+  resolution (verify against known-good output) is the generalisable
+  lesson, not just a one-off note.
+
+Decision: fix is needed, but WHICH fix is a genuine design choice, not an
+obvious bugfix -- raising U_BOUND uniformly could reduce gradient death
+for high-g teachers' settled dynamics (good) but also reduces the margin
+that specifically prevented an earlier, more severe failure mode in this
+same investigation (non_diffusive coupling's catastrophic blow-up at
+nominal g=1000, N0.3) during early, far-from-truth fitting iterations
+when parameters can be in much more extreme configurations than any
+teacher's own true value -- a global change here could trade "g is biased
+low" for "training occasionally diverges," which is not obviously a
+better trade without testing it. Flagging this as a stop-and-ask point
+(CLAUDE.md: "a required design choice is not specified and different
+choices could change the conclusion") rather than picking a value and
+re-running the multi-hour N2 gate on a guess.
+
+RAISING U_BOUND: TESTED AND DISCONFIRMED (2026-11-26, William chose this
+option to try first). Stability check across U_BOUND in {2000, 5000,
+10000} on all 8 teachers + the nominal start: no NaN/Inf anywhere, EEG
+stays sane -- numerically safe. But the gradient-survival check that
+matters shows this does NOT fix the problem: t0/t1/t5/t6 (already the
+better-recovering teachers) improve substantially (e.g. t1: 0.686->0.954
+at U_BOUND=10000), while t2/t3/t4/t7 (the worst four) barely move at all
+(0.37-0.44 across the whole range tested). Pushing U_BOUND three more
+orders of magnitude (5e2 to 5e5) on just those four teachers settles the
+question: the ratio of settled-window coupling magnitude to U_BOUND
+converges to a CONSTANT ~3-4x and stops shrinking (t2: 38.6x at U=500 ->
+4.6x at U=5000 -> 3.3x at U=50000 -> 3.2x at U=500000; same pattern for
+t3/t4/t7). **This means these four teachers' network dynamics have no
+bounded, non-saturating equilibrium for any clip value -- raising U_BOUND
+cannot work by construction, not just insufficiently, because the system
+settles into a proportionally larger steady state at whatever bound is
+set.** U_BOUND is not an optional safety margin for these parameter draws;
+it is the only thing preventing outright divergence. Disconfirmed by
+direct test, not argued from the mechanism alone.
+
+Remaining options, now that this one is ruled out: (a) investigate the
+underlying instability itself -- why this specific coupling formulation
+has no bounded equilibrium above some g threshold, whether it is specific
+to this anatomy/connectivity or general to Laplacian coupling at this
+parameter scale -- a genuinely open research question, not a quick
+diagnostic; or (b) accept and scope this as a documented limitation: this
+method reliably recovers g only in roughly the range t0/t1/t6 occupy
+(~500-750), and future teacher draws / N3 work should either restrict g
+to that range or explicitly carry this caveat forward rather than
+treating the whole g axis as in-scope.
+
+NON-DIFFUSIVE COUPLING AS AN ALTERNATIVE: TESTED, DOES NOT HELP -- MAKES
+IT WORSE (2026-11-26). Motivation: Laplacian coupling sends raw, unbounded
+membrane-potential-like values (E) between nodes; non_diffusive coupling
+sends a sigmoid-bounded firing rate (S(E), capped at vmax=5) instead --
+structurally immune to the "no bounded equilibrium" problem above, and
+arguably more physiologically plausible (real inter-areal connections are
+carried by rate-limited spikes, not raw potentials). Confirmed this
+directly: a g-sweep across U_BOUND values under non_diffusive coupling
+shows clean decay and stable, bounded EEG (no NaN/Inf) across g=50-300,
+with no sign of the scale-invariant runaway Laplacian showed.
+
+Ran the full ensemble gate (5 restarts/teacher, same 8 teachers, same
+held-out design, non_diffusive coupling, g=100 -- N1's earlier CRB "sweet
+spot" for this mode) to test whether removing the structural instability
+actually improves backprop recovery. **It does not -- g recovery is WORSE,
+and mu, previously Laplacian's cleanest win, is badly broken:**
+
+  Median |rel_error|, matched non_diffusive (teacher=student, g=100) vs
+  matched Laplacian (the N2 gate above):
+    param   non_diffusive   Laplacian
+    a            1.8%          0.3%
+    b           16.8%          1.5%
+    g           58.4%         27.1%
+    c1          43.8%         34.3%
+    c2          56.2%         26.6%
+    c3          32.8%          1.5%
+    c4          38.7%          5.8%
+    mu          59.5%          0.4%
+    k            0.2%          0.3%
+    c1*c2       75.2%         12.0%
+    c3*c4        9.0%          4.2%
+
+  g's median error is roughly DOUBLE Laplacian's, with a catastrophic
+  outlier (teacher 3: +1351%). mu -- which had essentially perfect,
+  unanimous positive progress under Laplacian (median +1.01, all 8
+  positive) -- now has NEGATIVE progress (moved AWAY from truth, worse
+  than its random start) for 4 of 8 teachers, median |error| 59.5%. c1*c2
+  degrades from a passing 12.0% to a failing 75.2%. Only a, k (already
+  the easiest parameters everywhere in this whole study) and c3*c4
+  (roughly comparable, 9.0% vs 4.2%) are unaffected.
+
+  Train/held-out RMSE median 0.081/0.083 (vs Laplacian's 0.078/0.068) --
+  comparable overall fit quality, meaning this is NOT a case of the
+  non_diffusive student simply failing to fit the data; it fits about as
+  well as Laplacian does, while landing on substantially WRONG parameter
+  values to do so -- a sloppier, more degenerate loss landscape, not a
+  harder-to-reach one.
+
+  **Likely mechanism (not yet directly verified, flagged as the honest
+  open question rather than asserted): non_diffusive coupling has no
+  analogue of Laplacian's self-cancelling `dg @ E` term** (coupling = -1 x
+  (D-W) x E at rest for Laplacian, always pulling a perturbed node back
+  toward its neighbours' average; non_diffusive's coupling is purely
+  additive/positive, no restoring term of its own). This removes a
+  structural source of information that let Laplacian's g and mu load
+  distinctly on the EEG; without it, g's network-wide drive and mu's
+  conduction-delay shaping of that same drive become more mutually
+  entangled, which would explain BOTH symptoms at once (g degrading
+  further AND mu newly breaking) as two faces of the same new
+  degeneracy, rather than two unrelated problems.
+
+  **Revised verdict: the physiologically-motivated coupling choice is not
+  automatically the more IDENTIFIABLE one.** Laplacian coupling, despite
+  having a genuine, structural high-g instability that non_diffusive
+  avoids, has a far more tractable optimization landscape for every
+  parameter except g itself. Trading a clean, well-understood, localized
+  failure (g only, only above ~750-1000, now precisely characterized) for
+  a diffuse one (g worse, mu newly broken, c1*c2 much worse) is a bad
+  trade on the evidence so far. **Decision: do not adopt non_diffusive
+  coupling as a replacement for Laplacian.** Keep both coupling modes
+  available in the codebase (already parameterised via
+  `coupling_mode=`), but treat Laplacian as the default and non_diffusive
+  as a secondary, special-purpose option, not a fix for g.
+
+MISMATCHED-COUPLING ROBUSTNESS TEST, RESULT (2026-11-27): neurofe's real
+Laplacian-assumption framework does NOT stay robust if reality is closer
+to non_diffusive coupling -- this is the worst of all three conditions,
+by a wide margin, and the degradation shows up even in raw fit quality,
+not just parameter recovery.
+
+  Same 8 teachers, same held-out design, 5-restart ensemble. Teacher
+  generated under non_diffusive coupling (g=100); student fit assuming
+  Laplacian coupling (added `--student-coupling-mode` to recover_clean.py
+  for this). g is excluded from the recovery judgment here (no shared
+  ground truth across coupling modes -- see N0.1's docstring); only
+  a, b, c1-c4, mu, k (node-intrinsic, coupling-independent) are judged.
+
+  Median |rel_error|, three-way comparison:
+    param   matched Laplacian   matched non_diffusive   MISMATCHED
+    a             0.3%                 1.8%                4.5%
+    b             1.5%                16.8%               16.2%
+    c1           34.3%                43.8%               83.4%
+    c2           26.6%                56.2%               86.3%
+    c3            1.5%                32.8%               16.8%
+    c4            5.8%                38.7%               46.9%
+    mu            0.4%                59.5%               37.5%
+    k             0.3%                 0.2%                2.4%
+    c1*c2        12.0%                75.2%               98.1%
+    c3*c4         4.2%                 9.0%               54.4%
+    train RMSE   0.078                0.081                0.170
+    heldout RMSE 0.068                0.083                0.180
+
+  **The mismatched condition is unambiguously the worst on every measure
+  that matters for E/I-balance interpretation.** c1*c2 is essentially
+  destroyed (98.1% median error, with one teacher at +3146%); c3*c4
+  degrades to 54.4% (worse than either matched condition, which were 4.2%
+  and 9.0%). Train AND held-out RMSE are both roughly DOUBLE either
+  matched condition's (0.170/0.180 vs ~0.08 for both) -- meaning a
+  Laplacian student genuinely CANNOT reproduce non_diffusive-generated
+  data as well as a matched student can, at ANY parameter setting; this
+  is not just a parameter-recovery problem, the two coupling mechanisms
+  produce qualitatively different dynamics that a mismatched model family
+  cannot fully mimic. mu is bad (37.5%) but, notably, less bad than the
+  matched non_diffusive case's 59.5% -- and its progress is genuinely
+  mixed (4 of 8 positive, 4 negative), not uniformly destroyed like
+  c1*c2/c2.
+
+  The student's fitted "effective Laplacian g" clusters low (9-40) for
+  7/8 teachers, one outlier at 204 -- far below any matched-Laplacian
+  teacher's true g (500-1500). Reported for interpretation only: a
+  Laplacian student fitting non_diffusive-generated data apparently
+  compensates by using very weak inter-node coupling and absorbing the
+  mismatch into (badly wrong) local loop-gain parameters instead --
+  consistent with c1*c2/c2 being where the damage concentrates.
+
+  **This is the single most practically important finding of the N2.5
+  investigation.** If real cortical coupling is closer to the bounded,
+  rate-based mechanism non_diffusive coupling represents (the more
+  physiologically grounded assumption -- see the conversation's earlier
+  discussion of TMS afterdischarges and real synaptic rate-limiting),
+  then applying neurofe's actual Laplacian-only framework to real TMS-EEG
+  data would not just fail to recover network-coupling-strength (already
+  known) -- it would produce SUBSTANTIALLY WRONG loop-gain (E/I-balance)
+  estimates, the exact quantities this whole study's single-node and
+  network phases both treat as the primary scientific target. This is a
+  limitation of neurofe's modeling assumption itself, not of this
+  identifiability study's method.
+
+  Decision: do not treat this as a reason to switch coupling modes (both
+  matched-non_diffusive and mismatched are worse than matched-Laplacian
+  on every measure) -- treat it as a documented, now quantified caveat
+  that belongs alongside every future result this framework produces:
+  loop-gain (c1*c2, c3*c4) recovery is reliable ONLY to the extent
+  Laplacian coupling is itself a reasonable approximation of the true
+  coupling mechanism, and this has not been validated against real brain
+  connectivity data. Flagging as a finding for executive_summary.pdf and
+  README.md, not a blocker for proceeding with Laplacian-based N3 work
+  (which this evidence continues to support as the best available
+  choice), but a limitation that must travel with any claim this study
+  or neurofe's real pipeline makes about recovered loop gains.
+
+
+7. PART N3: SCALE UP (only after N2 passes AND N2.5 resolves g)
+----------------------------------------------------------------
 
 Aim
   Decide the next axis to extend on, using N1-style Fisher sweeps to choose
@@ -693,21 +1097,26 @@ Do not combine N3.a and N3.b in one run: if a combined S2-20-node attempt
 fails, it will not be possible to tell whether tier or scale was the cause.
 
 
-7. PASS CRITERIA SUMMARY (TO AGREE BEFORE RUNNING)
+8. PASS CRITERIA SUMMARY (TO AGREE BEFORE RUNNING)
 ------------------------------------------------------
 
-  N0  coupling fix engages >=1 node's loop in the tiny sanity check without
-      uncontrolled oscillation; new harness reproduces the single-node E9
-      result to within its own error bars.
-  N1  CRB bound < 20% for k, a and at least one loop-gain combination at
-      tier S1, coupling on, for at least one stimulation design.
-  N2  median point-estimate error < 20% and 90% credible interval coverage
-      80-98%, for the combinations N1 flagged, across >=8 independent
-      teachers; mu shows nonzero progress; no uncontrolled oscillation.
-  N3  decided by N1-style Fisher sweeps at the new scale/tier, not before.
+  N0   coupling fix engages >=1 node's loop in the tiny sanity check without
+       uncontrolled oscillation; new harness reproduces the single-node E9
+       result to within its own error bars.
+  N1   CRB bound < 20% for k, a and at least one loop-gain combination at
+       tier S1, coupling on, for at least one stimulation design.
+  N2   median point-estimate error < 20% and 90% credible interval coverage
+       80-98%, for the combinations N1 flagged, across >=8 independent
+       teachers; mu shows nonzero progress; no uncontrolled oscillation.
+  N2.5 g's systematic low-g bias is either explained by a confirmed U_BOUND
+       clip artifact (and fixed) or shown, with a larger targeted ensemble,
+       to be a genuine landscape limit at high true g -- either way,
+       understood well enough to decide whether N2's verdict on g needs
+       revisiting, before N3 or the network Laplace check proceed.
+  N3   decided by N1-style Fisher sweeps at the new scale/tier, not before.
 
 
-8. RISKS
+9. RISKS
 ------------
 
   The non-diffusive coupling engages the loop but also makes the network
@@ -737,7 +1146,7 @@ fails, it will not be possible to tell whether tier or scale was the cause.
          network-level findings.
 
 
-9. FILES
+10. FILES
 ------------
 
   syn_brain/docs/network_study_plan.txt   this plan
@@ -774,3 +1183,12 @@ fails, it will not be possible to tell whether tier or scale was the cause.
                                           re-applies at network scale
   syn_brain/reports/jr_parameters_explainer.pdf  equilibria()-style
                                           stability check to reuse for N0.2
+  syn_brain/results/identifiability/nominal.json  already has the Fisher/CRB
+                                          and correlation data used to rule
+                                          out "g is sloppy" in N2.5's first
+                                          analysis -- no new run needed to
+                                          reread it
+  syn_brain/results/recovery_ensemble/*_N2full_ens_t*.json  the 8 already-
+                                          fit N2-gate results used for N2.5's
+                                          second analysis (per-teacher g
+                                          truth/start/fitted pattern)
